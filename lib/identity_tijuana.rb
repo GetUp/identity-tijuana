@@ -1,5 +1,6 @@
 require 'identity_tijuana/user'
 require 'identity_tijuana/postcode'
+require 'identity_tijuana/campaign'
 
 module ExternalSystems::IdentityTijuana
   SYSTEM_NAME = 'tijuana'
@@ -48,6 +49,36 @@ module ExternalSystems::IdentityTijuana
 
       unless updated_members.empty?
         Sidekiq.redis { |r| r.set 'tijuana:push-members:last_updated_at', updated_members.last.updated_at }
+      end
+    end
+
+    def pull_updated_pillars_and_campaigns
+      Rails.logger.info "Pull pillars and campaigns from Tijuana"
+      puts "Pull pillars and campaigns from Tijuana"
+      last_updated_at = Time.parse(Sidekiq.redis { |r| r.get 'tijuana:pull-pillars-campaigns:last_updated_at' } || '1970-01-01 00:00:00')
+
+      updated_pillars = Campaign
+        .where('campaigns.updated_at > ?', last_updated_at)
+        .order('campaigns.updated_at')
+        .select('pillar', 'updated_at')
+        .distinct()
+        .limit(Settings.tijuana.pull_batch_amount)
+
+      updated_pillars.each do |updated_pillar|
+        IssueCategory.create(name: updated_pillar.pillar)
+      end
+
+      updated_campaigns = Campaign
+        .where('campaigns.updated_at > ?', last_updated_at)
+        .order('campaigns.updated_at')
+        .limit(Settings.tijuana.pull_batch_amount)
+
+      updated_campaigns.each do |campaign|
+        Issue.create(name: campaign.name)
+      end
+
+      unless updated_campaigns.empty?
+        Sidekiq.redis { |r| r.set 'tijuana:pull-pillars-campaigns:last_updated_at', updated_campaigns.last.updated_at }
       end
     end
   end

@@ -14,6 +14,9 @@ RSpec.describe ExternalSystems::IdentityTijuana do
     DatabaseCleaner[:active_record, db: ExternalSystems::IdentityTijuana::User].strategy = :truncation
     DatabaseCleaner[:active_record, db: ExternalSystems::IdentityTijuana::User].start
     DatabaseCleaner[:active_record, db: ExternalSystems::IdentityTijuana::User].clean
+
+    Sidekiq.redis { |r| r.set 'tijuana:pull-users:last_updated_at', '1970-01-01 00:00:00' }
+    Sidekiq.redis { |r| r.set 'tijuana:pull-pillars-campaigns:last_updated_at', '1970-01-01 00:00:00' }
   end
 
   context '#pull_updated_users' do
@@ -100,6 +103,81 @@ RSpec.describe ExternalSystems::IdentityTijuana do
       ExternalSystems::IdentityTijuana.pull_updated_users() {}
       expect(Member.first).to have_attributes(first_name: 'Address', last_name: 'McAdd', email: 'address@example.com')
       expect(Member.first.address).to have_attributes(line1: '18 Mitchell Street', town: 'Bondi', postcode: '2026', state: 'NSW')
+    end
+  end
+
+  context '#pull_updated_pillars_and_campaigns' do
+    it 'adds pillars' do
+      campaign = FactoryBot.create(:tijuana_campaign)
+
+      ExternalSystems::IdentityTijuana.pull_updated_pillars_and_campaigns() {}
+
+      expect(IssueCategory.count).to eq(1)
+      expect(IssueCategory.first.name).to eq(campaign.pillar)
+    end
+
+    it 'adds multiple pillars' do
+      FactoryBot.create(:tijuana_campaign)
+      FactoryBot.create(:tijuana_campaign)
+      FactoryBot.create(:tijuana_campaign)
+      FactoryBot.create(:tijuana_campaign)
+
+      ExternalSystems::IdentityTijuana.pull_updated_pillars_and_campaigns() {}
+
+      expect(IssueCategory.count).to eq(4)
+    end
+
+    it 'adds pillars with the same name once only' do
+      campaign = FactoryBot.create(:tijuana_campaign)
+
+      ExternalSystems::IdentityTijuana.pull_updated_pillars_and_campaigns() {}
+
+      expect(IssueCategory.count).to eq(1)
+      expect(IssueCategory.first.name).to eq(campaign.pillar)
+
+      allow(Time).to receive(:now).and_return(Time.now + 1.day)
+
+      campaign_with_same_pillar = FactoryBot.create(:tijuana_campaign, pillar: campaign.pillar)
+
+      ExternalSystems::IdentityTijuana.pull_updated_pillars_and_campaigns() {}
+
+      expect(IssueCategory.count).to eq(1)
+      expect(IssueCategory.first.name).to eq(campaign.pillar)
+    end
+
+    it 'adds campaigns' do
+      campaign = FactoryBot.create(:tijuana_campaign)
+
+      ExternalSystems::IdentityTijuana.pull_updated_pillars_and_campaigns() {}
+
+      expect(Issue.count).to eq(1)
+    end
+
+    it 'adds multiple campaigns and pillars' do
+      campaign_a = FactoryBot.create(:tijuana_campaign)
+      campaign_b = FactoryBot.create(:tijuana_campaign)
+      campaign_c = FactoryBot.create(:tijuana_campaign)
+      campaign_d = FactoryBot.create(:tijuana_campaign, pillar: campaign_a.pillar)
+      campaign_e = FactoryBot.create(:tijuana_campaign, pillar: campaign_b.pillar)
+
+      ExternalSystems::IdentityTijuana.pull_updated_pillars_and_campaigns() {}
+
+      expect(Issue.count).to eq(5)
+      expect(IssueCategory.count).to eq(3)
+
+      allow(Time).to receive(:now).and_return(Time.now + 1.day)
+
+      campaign_f = FactoryBot.create(:tijuana_campaign, pillar: campaign_a.pillar)
+      campaign_g = FactoryBot.create(:tijuana_campaign, pillar: campaign_c.pillar)
+      campaign_h = FactoryBot.create(:tijuana_campaign)
+      campaign_i = FactoryBot.create(:tijuana_campaign, name: campaign_c.name, pillar: campaign_c.pillar)
+
+      puts campaign_f.updated_at
+
+      ExternalSystems::IdentityTijuana.pull_updated_pillars_and_campaigns() {}
+
+      expect(Issue.count).to eq(8)
+      expect(IssueCategory.count).to eq(4)
     end
   end
 end
