@@ -69,6 +69,7 @@ module ExternalSystems::IdentityTijuana
       member = Member.find(member_id)
 
       if member.entry_point.present? and not member.entry_point.starts_with? 'tijuana'
+        address = member.address
         user = User.find_by_email(member.email)
 
         user_hash = {
@@ -76,8 +77,17 @@ module ExternalSystems::IdentityTijuana
           last_name: member.last_name,
           mobile_number: member.phone_numbers.mobile.first&.phone,
           home_number: member.phone_numbers.landline.first&.phone,
-          email: member.email
+          email: member.email,
+          is_member: member.is_subscribed_to?(Subscription::EMAIL_SUBSCRIPTION.id),
+          do_not_call: !member.is_subscribed_to?(Subscription::CALLING_SUBSCRIPTION.id),
+          do_not_sms: !member.is_subscribed_to?(Subscription::SMS_SUBSCRIPTION.id),
+          street_address: [address&.line1, address&.line2].compact.join(', '),
+          suburb: address&.town,
         }
+
+        if address
+          user_hash[:postcode] = ExternalSystems::IdentityTijuana::Postcode.new(number: address&.postcode, state: address&.state)
+        end
 
         if user
           user.update!(user_hash)
