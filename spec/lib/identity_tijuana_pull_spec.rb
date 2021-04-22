@@ -35,6 +35,9 @@ describe IdentityTijuana do
       @email_sub = FactoryBot.create(:email_subscription)
       @calling_sub = FactoryBot.create(:calling_subscription)
       @sms_sub = FactoryBot.create(:sms_subscription)
+      allow(Settings).to receive_message_chain("options.use_redshift") { false }
+      allow(Settings).to receive_message_chain("options.allow_subscribe_via_upsert_member") { true }
+      allow(Settings).to receive_message_chain("options.default_member_opt_in_subscriptions") { true }
       allow(Settings).to receive_message_chain("options.default_phone_country_code") { '61' }
       allow(Settings).to receive_message_chain("tijuana.email_subscription_id") { @email_sub.id }
       allow(Settings).to receive_message_chain("tijuana.calling_subscription_id") { @calling_sub.id }
@@ -88,16 +91,17 @@ describe IdentityTijuana do
       expect(member_with_email_and_calling.is_subscribed_to?(@sms_sub)).to eq(false)
     end
 
-    it 'upserts members based on phone' do
+    it 'does not upsert members based on phone' do
       Settings.stub_chain(:options, :default_mobile_phone_national_destination_code) { 4 }
       member = FactoryBot.create(:member)
+      name = member.name
       member.update_phone_number('61427700300')
 
-      user = FactoryBot.create(:tijuana_user, mobile_number: '0427700300', email: '')
+      user = FactoryBot.create(:tijuana_user, mobile_number: '41427700300', email: '')
 
       IdentityTijuana.fetch_updated_users(@sync_id) {}
 
-      expect(Member.find_by_phone('61427700300')).to have_attributes(name: "#{user.first_name} #{user.last_name}")
+      expect(Member.find_by_phone('61427700300')).to have_attributes(name: name)
       expect(Member.count).to eq(2)
     end
 
@@ -142,6 +146,8 @@ describe IdentityTijuana do
     end
 
     it 'imports no taggings if last user updated at is before taggings updated_at' do
+      allow(Settings).to receive_message_chain("options.use_redshift") { false }
+      allow(Settings).to receive_message_chain("options.allow_subscribe_via_upsert_member") { false }
       IdentityTijuana.fetch_updated_users(@sync_id) {}
       Sidekiq.redis { |r| r.set 'tijuana:users:last_updated_at', Date.today - 2 }
       IdentityTijuana.fetch_latest_taggings(@sync_id) {}
@@ -150,7 +156,8 @@ describe IdentityTijuana do
     end
 
     it 'imports taggings if created_at not set' do
-
+      allow(Settings).to receive_message_chain("options.use_redshift") { false }
+      allow(Settings).to receive_message_chain("options.allow_subscribe_via_upsert_member") { false }
       IdentityTijuana::Tagging.all.update_all(created_at: nil)
       IdentityTijuana.fetch_updated_users(@sync_id) {}
       Sidekiq.redis { |r| r.set 'tijuana:users:last_updated_at', Date.today - 2 }
@@ -162,7 +169,8 @@ describe IdentityTijuana do
     end
 
     it 'imports tags' do
-
+      allow(Settings).to receive_message_chain("options.use_redshift") { false }
+      allow(Settings).to receive_message_chain("options.allow_subscribe_via_upsert_member") { false }
       IdentityTijuana.fetch_updated_users(@sync_id) {}
       Sidekiq.redis { |r| r.set 'tijuana:users:last_updated_at', Date.today + 2 }
 

@@ -392,7 +392,7 @@ class Member < ApplicationRecord
     # If this user already has the canonical address among their addresses, touch it to make it their most recent. Otherwise insert it.
     if (canonical_address = CanonicalAddress.search(address_attributes))
       if (address = addresses.find_by(canonical_address: canonical_address))
-        address.touch!
+        address.touch
       else
         new_address = Address.new(address_attributes.merge(canonical_address: canonical_address))
         new_address.audit_data = audit_data
@@ -401,7 +401,7 @@ class Member < ApplicationRecord
     else
       # If we can't match the address
       if (address = addresses.find_by(address_attributes))
-        address.touch!
+        address.touch
       else
         new_address = Address.new(address_attributes)
         new_address.audit_data = audit_data
@@ -444,7 +444,7 @@ class Member < ApplicationRecord
     # If this user already has the canonical address among their addresses, touch it to make it their most recent. Otherwise insert it.
     if (canonical_address = CanonicalAddress.search(address_attributes))
       if (address = addresses.find_by(canonical_address: canonical_address))
-        address.touch!
+        address.touch
       else
         new_address = Address.new(address_attributes.merge(canonical_address: canonical_address))
         new_address.audit_data = audit_data
@@ -453,7 +453,7 @@ class Member < ApplicationRecord
     else
       # If we can't match the address
       if (address = addresses.find_by(address_attributes))
-        address.touch!
+        address.touch
       else
         new_address = Address.new(address_attributes)
         new_address.audit_data = audit_data
