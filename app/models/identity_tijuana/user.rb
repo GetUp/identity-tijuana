@@ -58,8 +58,8 @@ module IdentityTijuana
 
       standard_home = PhoneNumber.standardise_phone_number(home_number) if home_number.present?
       standard_mobile = PhoneNumber.standardise_phone_number(mobile_number) if mobile_number.present?
-      member_hash[:phones].push(phone: standard_home) if home_number.present?
-      member_hash[:phones].push(phone: standard_mobile) if mobile_number.present? and standard_mobile != standard_home
+      member_hash[:phones].push(phone: standard_home) if standard_home.present?
+      member_hash[:phones].push(phone: standard_mobile) if standard_mobile.present? and standard_mobile != standard_home
 
       begin
         UpsertMember.call(
