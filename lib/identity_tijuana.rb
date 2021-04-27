@@ -1,6 +1,7 @@
 require 'identity_tijuana/user'
 require 'identity_tijuana/postcode'
 require 'identity_tijuana/campaign'
+require 'identity_tijuana/user_activity_event'
 
 module ExternalSystems::IdentityTijuana
   SYSTEM_NAME = 'tijuana'
@@ -79,6 +80,25 @@ module ExternalSystems::IdentityTijuana
 
       unless updated_campaigns.empty?
         Sidekiq.redis { |r| r.set 'tijuana:pull-pillars-campaigns:last_updated_at', updated_campaigns.last.updated_at }
+      end
+    end
+
+    def pull_updated_user_activity_events
+      Rails.logger.info "Pull updated user activity events"
+      puts "Pull updated user activity events"
+      last_updated_at = Time.parse(Sidekiq.redis { |r| r.get 'tijuana:pull-user-activity-events:last_updated_at' } || '1970-01-01 00:00:00')
+
+      updated_activities = UserActivityEvent
+        .where('user_activity_events.updated_at > ?', last_updated_at)
+        .order('user_activity_events.updated_at')
+        .limit(Settings.tijuana.pull_batch_amount)
+
+      updated_activities.each do |activity|
+        UserActivityEvent.import(activity.id)
+      end
+
+      unless updated_activities.empty?
+        Sidekiq.redis { |r| r.set 'tijuana:pull-user-activity-events:last_updated_at', updated_activities.last.updated_at }
       end
     end
   end

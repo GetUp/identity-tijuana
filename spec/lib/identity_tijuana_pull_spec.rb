@@ -180,4 +180,19 @@ RSpec.describe ExternalSystems::IdentityTijuana do
       expect(IssueCategory.count).to eq(4)
     end
   end
+
+  context '#pull_updated_user_activity_events' do
+    it 'can add a user activity event' do
+      user = FactoryBot.create(:tijuana_user)
+      user_activity_event = FactoryBot.create(:tijuana_activity, user: user)
+
+      ExternalSystems::IdentityTijuana.pull_updated_users() {}
+      ExternalSystems::IdentityTijuana.pull_updated_user_activity_events() {}
+
+      expect(Action.count).to eq(1)
+      expect(MemberAction.count).to eq(1)
+      expect(MemberAction.first.member.id).to eq(user.id)
+      expect(MemberAction.first.action.id).to eq(Action.first.id)
+    end
+  end
 end
