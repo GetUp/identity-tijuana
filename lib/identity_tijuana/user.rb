@@ -100,5 +100,9 @@ module ExternalSystems::IdentityTijuana
     def member
       return Member.find_by_email(email)
     end
+
+    def from_member(member)
+      return User.find_by_email(member.email)
+    end
   end
 end

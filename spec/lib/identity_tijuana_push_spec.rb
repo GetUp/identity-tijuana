@@ -2,6 +2,7 @@ require 'rails_helper'
 require 'identity_tijuana'
 
 User = ExternalSystems::IdentityTijuana::User
+Push = ExternalSystems::IdentityTijuana::Push
 
 RSpec.configure do |config|
   config.before(:all) do
@@ -13,9 +14,9 @@ end
 RSpec.describe ExternalSystems::IdentityTijuana do
   before(:each) do
     DatabaseCleaner[:active_record].clean_with(:truncation, :except => %w[permissions subscriptions])
-    DatabaseCleaner[:active_record, db: ExternalSystems::IdentityTijuana::User].strategy = :truncation
-    DatabaseCleaner[:active_record, db: ExternalSystems::IdentityTijuana::User].start
-    DatabaseCleaner[:active_record, db: ExternalSystems::IdentityTijuana::User].clean
+    DatabaseCleaner[:active_record, db: ExternalSystems::IdentityTijuana::Push].strategy = :truncation
+    DatabaseCleaner[:active_record, db: ExternalSystems::IdentityTijuana::Push].start
+    DatabaseCleaner[:active_record].clean
   end
 
   context '#push_updated_members' do
@@ -129,6 +130,20 @@ RSpec.describe ExternalSystems::IdentityTijuana do
       expect(User.first).to have_attributes(first_name: 'Address', last_name: 'McAdd', email: 'address@example.com')
       expect(User.first).to have_attributes(street_address: '18 Mitchell Street', suburb: 'Bondi')
       expect(User.first.postcode).to have_attributes(number: '2026', state: 'NSW')
+    end
+  end
+
+  context '#push_mailings' do
+    it 'pushes a single mailing' do
+      list = FactoryBot.create(:list, member_count: 10)
+      mailing = Mailer::Mailing.create!(list_id: list.id, from_name: 'test')
+
+      ExternalSystems::IdentityTijuana.push_mailings() {}
+
+      puts Push.all.map(&:id)
+      puts Mailer::Mailing.all.map(&:id)
+
+      expect(Push.count).to eq(1)
     end
   end
 end

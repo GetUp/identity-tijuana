@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    identity_tijuana (0.1.0)
+    identity_tijuana (0.1.1)
       active_model_serializers (~> 0.10.7)
       httpclient
       pg (~> 0.18)

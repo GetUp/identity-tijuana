@@ -1,6 +1,10 @@
+require 'pry'
 require 'identity_tijuana/user'
 require 'identity_tijuana/postcode'
 require 'identity_tijuana/campaign'
+require 'identity_tijuana/push'
+require 'identity_tijuana/blast'
+require 'identity_tijuana/email'
 require 'identity_tijuana/user_activity_event'
 
 module ExternalSystems::IdentityTijuana
@@ -99,6 +103,40 @@ module ExternalSystems::IdentityTijuana
 
       unless updated_activities.empty?
         Sidekiq.redis { |r| r.set 'tijuana:pull-user-activity-events:last_updated_at', updated_activities.last.updated_at }
+      end
+    end
+
+    def push_mailings
+      Rails.logger.info "Push updated mailings and associated member data"
+      puts "Push updated mailings and associated member data"
+      last_updated_at_mailings = Time.parse(Sidekiq.redis { |r| r.get 'tijuana:push-mailings:last_updated_at' } || '1970-01-01 00:00:00')
+      last_updated_at_member_mailings = Time.parse(Sidekiq.redis { |r| r.get 'tijuana:push-member-mailings:last_updated_at' } || '1970-01-01 00:00:00')
+
+      updated_mailings = Mailer::Mailing
+        .where('mailings.updated_at > ?', last_updated_at_mailings)
+        .order('mailings.updated_at')
+        .limit(Settings.tijuana.push_batch_amount)
+
+      unless updated_mailings.empty?
+        Sidekiq.redis { |r| r.set 'tijuana:push-mailings:last_updated_at', updated_mailings.last.updated_at }
+      end
+
+      updated_mailings.each do |mailing|
+        puts mailing.name
+        Push.export(mailing.id)
+      end
+
+      updated_member_mailings = MemberMailing
+        .where('member_mailings.updated_at > ?', last_updated_at_member_mailings)
+        .order('member_mailings.updated_at')
+        .limit(Settings.tijuana.push_batch_amount)
+
+      unless updated_member_mailings.empty?
+        Sidekiq.redis { |r| r.set 'tijuana:push-member-mailingss:last_updated_at', updated_member_mailings.last.updated_at }
+      end
+
+      updated_member_mailings.each do |member_mailing|
+        Push.export_member_data(member_mailing.id)
       end
     end
   end
