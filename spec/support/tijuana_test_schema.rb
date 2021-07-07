@@ -26,8 +26,6 @@ class CreateTijuanaTestDb < ActiveRecord::Migration[5.0]
       t.string   'first_name',                   limit: 64
       t.string   'last_name',                    limit: 64
       t.string   'mobile_number',                limit: 32
-      t.string   'last_name',                    limit: 64
-      t.string   'mobile_number',                limit: 32
       t.string   'home_number',                  limit: 32
       t.string   'street_address',               limit: 128
       t.string   'suburb',                       limit: 64

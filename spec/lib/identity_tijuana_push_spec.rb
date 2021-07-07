@@ -31,6 +31,10 @@ describe IdentityTijuana do
       @sync_id = 1
       @external_system_params = JSON.generate({'tag' => 'test_tag'})
 
+      allow(Settings).to receive_message_chain("tijuana.push_batch_amount") { 10 }
+      allow(Settings).to receive_message_chain("tijuana.api.url") { "http://localhost" }
+      allow(Settings).to receive_message_chain("tijuana.api.secret") { "blarg" }
+
       2.times { FactoryBot.create(:member) }
       FactoryBot.create(:member_without_email)
       @members = Member.all.with_email
