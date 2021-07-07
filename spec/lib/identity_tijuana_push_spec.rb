@@ -15,7 +15,7 @@ describe IdentityTijuana do
 
     context 'with valid parameters' do
       it 'yeilds members_with_emails' do
-        IdentityTijuana.push(@sync_id, @members, @external_system_params) do |members_with_emails, campaign_name|
+        ExternalSystems::IdentityTijuana.push(@sync_id, @members, @external_system_params) do |members_with_emails, campaign_name|
           expect(members_with_emails.count).to eq(2)
         end
       end
@@ -42,13 +42,13 @@ describe IdentityTijuana do
 
     context 'with valid parameters' do
       it 'yeilds correct batch_index' do
-        IdentityTijuana.push_in_batches(1, @members, @external_system_params) do |batch_index, write_result_count|
+        ExternalSystems::IdentityTijuana.push_in_batches(1, @members, @external_system_params) do |batch_index, write_result_count|
           expect(batch_index).to eq(0)
         end
       end
       #TODO update with write results
       it 'yeilds write_result_count' do
-        IdentityTijuana.push_in_batches(1, @members, @external_system_params) do |batch_index, write_result_count|
+        ExternalSystems::IdentityTijuana.push_in_batches(1, @members, @external_system_params) do |batch_index, write_result_count|
           expect(write_result_count).to eq(0)
         end
       end

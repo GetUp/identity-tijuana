@@ -24,8 +24,10 @@ describe IdentityTijuana do
 
     context 'with valid parameters' do
       it 'should call the corresponding method'  do
-        expect(IdentityTijuana).to receive(:fetch_updated_users).exactly(1).times.with(1)
-        IdentityTijuana.pull(@sync_id, @external_system_params)
+        expect(ExternalSystems::IdentityTijuana).to(
+          receive(:fetch_updated_users).exactly(1).times.with(1)
+        )
+        ExternalSystems::IdentityTijuana.pull(@sync_id, @external_system_params)
       end
     end
   end
@@ -48,7 +50,7 @@ describe IdentityTijuana do
 
     it 'adds members' do
       user = FactoryBot.create(:tijuana_user)
-      IdentityTijuana.fetch_updated_users(@sync_id) {}
+      ExternalSystems::IdentityTijuana.fetch_updated_users(@sync_id) {}
       expect(Member.find_by(email: user.email)).to have_attributes(name: "#{user.first_name} #{user.last_name}")
       expect(Member.count).to eq(1)
     end
@@ -60,7 +62,7 @@ describe IdentityTijuana do
       expect(Member.count).to eq(1)
       expect(Member.first).not_to have_attributes(first_name: user.first_name)
 
-      IdentityTijuana.fetch_updated_users(@sync_id) {}
+      ExternalSystems::IdentityTijuana.fetch_updated_users(@sync_id) {}
       expect(Member.find_by(email: user.email)).to have_attributes(name: "#{user.first_name} #{user.last_name}")
       expect(Member.count).to eq(1)
     end
@@ -71,7 +73,7 @@ describe IdentityTijuana do
       member_with_email_and_calling.update_attributes(email: user.email)
 
 
-      IdentityTijuana.fetch_updated_users(@sync_id) {}
+      ExternalSystems::IdentityTijuana.fetch_updated_users(@sync_id) {}
       member_with_email_and_calling.reload
       expect(member_with_email_and_calling.is_subscribed_to?(@email_sub)).to eq(true)
       expect(member_with_email_and_calling.is_subscribed_to?(@calling_sub)).to eq(true)
@@ -83,7 +85,7 @@ describe IdentityTijuana do
       member_with_email_and_calling = FactoryBot.create(:member)
       member_with_email_and_calling.update_attributes(email: user.email)
 
-      IdentityTijuana.fetch_updated_users(@sync_id) {}
+      ExternalSystems::IdentityTijuana.fetch_updated_users(@sync_id) {}
 
       member_with_email_and_calling.reload
       expect(member_with_email_and_calling.is_subscribed_to?(@email_sub)).to eq(false)
@@ -99,7 +101,7 @@ describe IdentityTijuana do
 
       user = FactoryBot.create(:tijuana_user, mobile_number: '41427700300', email: '')
 
-      IdentityTijuana.fetch_updated_users(@sync_id) {}
+      ExternalSystems::IdentityTijuana.fetch_updated_users(@sync_id) {}
 
       expect(Member.find_by_phone('61427700300')).to have_attributes(name: name)
       expect(Member.count).to eq(2)
@@ -109,7 +111,7 @@ describe IdentityTijuana do
       Settings.stub_chain(:options, :default_mobile_phone_national_destination_code) { 4 }
       FactoryBot.create(:tijuana_user, first_name: 'Phone', last_name: 'McPhone', email: 'phone@example.com', mobile_number: '0427700300', home_number: '(02) 8188 2888')
 
-      IdentityTijuana.fetch_updated_users(@sync_id) {}
+      ExternalSystems::IdentityTijuana.fetch_updated_users(@sync_id) {}
       expect(Member.count).to eq(1)
       expect(Member.first.phone_numbers.count).to eq(2)
       expect(Member.first.phone_numbers.find_by(phone: '61427700300')).not_to be_nil
@@ -119,7 +121,7 @@ describe IdentityTijuana do
     it 'correctly adds addresses' do
       FactoryBot.create(:tijuana_user, first_name: 'Address', last_name: 'McAdd', email: 'address@example.com', street_address: '18 Mitchell Street', suburb: 'Bondi', postcode: IdentityTijuana::Postcode.new(number: 2026, state: 'NSW'))
 
-      IdentityTijuana.fetch_updated_users(@sync_id) {}
+      ExternalSystems::IdentityTijuana.fetch_updated_users(@sync_id) {}
       expect(Member.first).to have_attributes(first_name: 'Address', last_name: 'McAdd', email: 'address@example.com')
       expect(Member.first.address).to have_attributes(line1: '18 Mitchell Street', town: 'Bondi', postcode: '2026', state: 'NSW')
     end
@@ -148,9 +150,9 @@ describe IdentityTijuana do
     it 'imports no taggings if last user updated at is before taggings updated_at' do
       allow(Settings).to receive_message_chain("options.use_redshift") { false }
       allow(Settings).to receive_message_chain("options.allow_subscribe_via_upsert_member") { false }
-      IdentityTijuana.fetch_updated_users(@sync_id) {}
+      ExternalSystems::IdentityTijuana.fetch_updated_users(@sync_id) {}
       Sidekiq.redis { |r| r.set 'tijuana:users:last_updated_at', Date.today - 2 }
-      IdentityTijuana.fetch_latest_taggings(@sync_id) {}
+      ExternalSystems::IdentityTijuana.fetch_latest_taggings(@sync_id) {}
 
       expect(List.count).to eq(0)
     end
@@ -159,10 +161,10 @@ describe IdentityTijuana do
       allow(Settings).to receive_message_chain("options.use_redshift") { false }
       allow(Settings).to receive_message_chain("options.allow_subscribe_via_upsert_member") { false }
       IdentityTijuana::Tagging.all.update_all(created_at: nil)
-      IdentityTijuana.fetch_updated_users(@sync_id) {}
+      ExternalSystems::IdentityTijuana.fetch_updated_users(@sync_id) {}
       Sidekiq.redis { |r| r.set 'tijuana:users:last_updated_at', Date.today - 2 }
 
-      IdentityTijuana.fetch_latest_taggings(@sync_id) {}
+      ExternalSystems::IdentityTijuana.fetch_latest_taggings(@sync_id) {}
 
       expect(List.count).to eq(2)
       expect(Member.count).to eq(4)
@@ -171,10 +173,10 @@ describe IdentityTijuana do
     it 'imports tags' do
       allow(Settings).to receive_message_chain("options.use_redshift") { false }
       allow(Settings).to receive_message_chain("options.allow_subscribe_via_upsert_member") { false }
-      IdentityTijuana.fetch_updated_users(@sync_id) {}
+      ExternalSystems::IdentityTijuana.fetch_updated_users(@sync_id) {}
       Sidekiq.redis { |r| r.set 'tijuana:users:last_updated_at', Date.today + 2 }
 
-      IdentityTijuana.fetch_latest_taggings(@sync_id) {}
+      ExternalSystems::IdentityTijuana.fetch_latest_taggings(@sync_id) {}
 
       reef_tag = List.find_by(name: 'TIJUANA TAG: reef_syncid')
       economy_tag = List.find_by(name: 'TIJUANA TAG: economy_syncid')

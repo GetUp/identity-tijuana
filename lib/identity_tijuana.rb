@@ -1,6 +1,18 @@
 require "identity_tijuana/engine"
 
+# Main entry point for the id-tj engine. This file is loaded at
+# Id startup by identity:config/conditional_dependencies.rb.
+
+# Namespace for TJ-specific code & Rails engine
 module IdentityTijuana
+
+end
+
+# Namespace for Id's external systems integration
+module ExternalSystems
+module IdentityTijuana
+  include ::IdentityTijuana
+
   SYSTEM_NAME = 'tijuana'
   SYNCING = 'tag'
   CONTACT_TYPE = 'email'
@@ -254,3 +266,5 @@ module IdentityTijuana
     )
   end
 end
+end
+
