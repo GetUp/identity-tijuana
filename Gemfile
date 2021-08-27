@@ -25,4 +25,5 @@ group :development, :test do
   gem 'pry-rails'
   gem 'pry-byebug'
   gem 'spring-commands-rspec'
+  gem 'webmock', require: true
 end
