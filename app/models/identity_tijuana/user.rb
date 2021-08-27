@@ -47,21 +47,21 @@ module IdentityTijuana
         if Settings.tijuana.email_subscription_id
           member_hash[:subscriptions].push({
             id: Settings.tijuana.email_subscription_id,
-            action: !is_member ? 'unsubscribe' : 'subscribe'
+            action: is_member ? 'subscribe' : 'unsubscribe'
           })
         end
 
         if Settings.tijuana.calling_subscription_id
           member_hash[:subscriptions].push({
             id: Settings.tijuana.calling_subscription_id,
-            action: do_not_call ? 'unsubscribe' : 'subscribe'
+            action: is_member && !do_not_call ? 'subscribe' : 'unsubscribe'
           })
         end
 
         if Settings.tijuana.sms_subscription_id
           member_hash[:subscriptions].push({
             id: Settings.tijuana.sms_subscription_id,
-            action: do_not_sms ? 'unsubscribe' : 'subscribe'
+            action: is_member && !do_not_sms ? 'subscribe' : 'unsubscribe'
           })
         end
 
