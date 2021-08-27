@@ -32,7 +32,7 @@ describe IdentityTijuana do
       @external_system_params = JSON.generate({'tag' => 'test_tag'})
 
       allow(Settings).to receive_message_chain("tijuana.push_batch_amount") { 10 }
-      allow(Settings).to receive_message_chain("tijuana.api.url") { "http://localhost" }
+      allow(Settings).to receive_message_chain("tijuana.api.url") { "http://tijuana" }
       allow(Settings).to receive_message_chain("tijuana.api.secret") { "blarg" }
 
       2.times { FactoryBot.create(:member) }
@@ -52,6 +52,37 @@ describe IdentityTijuana do
           expect(write_result_count).to eq(0)
         end
       end
+    end
+  end
+
+  context 'with server errors' do
+    before(:each) do
+      clean_external_database
+
+      @sync_id = 1
+      @external_system_params = JSON.generate({'tag' => 'test_tag'})
+
+      allow(Settings).to receive_message_chain("tijuana.push_batch_amount") { 10 }
+      allow(Settings).to receive_message_chain("tijuana.api.url") { "http://tijuana" }
+      allow(Settings).to receive_message_chain("tijuana.api.secret") { "blarg" }
+
+      2.times { FactoryBot.create(:member) }
+      FactoryBot.create(:member_without_email)
+      @members = Member.all.with_email
+    end
+
+    it 'raises an error on connection refused' do
+      stub_request(:post, "tijuana").to_raise(Errno::ECONNREFUSED)
+      expect {
+        IdentityTijuana.push_in_batches(1, @members, @external_system_params)
+      }.to raise_error(Errno::ECONNREFUSED)
+    end
+
+    it 'raises an error on error 500' do
+      stub_request(:post, "tijuana").to_return(status: [500, "Test Error"])
+      expect {
+        IdentityTijuana.push_in_batches(1, @members, @external_system_params)
+      }.to raise_error(RuntimeError)
     end
   end
 end
