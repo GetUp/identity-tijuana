@@ -10,7 +10,7 @@ module IdentityTijuana
       includes(:postcode)
       .where('users.updated_at >= ?', last_updated_at)
       .order('users.updated_at')
-      .limit(IdentityTijuana.get_pull_batch_amount)
+      .limit(Settings.tijuana.pull_batch_amount)
     }
 
     scope :updated_users_all, -> (last_updated_at) {
@@ -24,52 +24,62 @@ module IdentityTijuana
     end
 
     def import(sync_id)
-      member_hash = {
-        ignore_phone_number_match: true,
-        firstname: first_name,
-        lastname: last_name,
-        emails: [{ email: email }],
-        phones: [],
-        addresses: [{ line1: street_address, town: suburb, country: country_iso, state: postcode.try(:state), postcode: postcode.try(:number) }],
-        external_ids: { tijuana: id },
-        subscriptions: []
-      }
+      existing = Member.find_by_external_id(:tijuana, id)
+      if existing.present? && existing.ghosting_started?
+          Rails.logger.warn "Tijuana member (#{id}) is ghosted (#{existing.id}), not updating"
+      else        
+        member_hash = {
+          ignore_phone_number_match: true,
+          firstname: first_name,
+          lastname: last_name,
+          emails: [{ email: email }],
+          phones: [],
+          addresses: [{
+            line1: street_address,
+            town: suburb,
+            country: country_iso,
+            state: postcode.try(:state),
+            postcode: postcode.try(:number)
+          }],
+          external_ids: { tijuana: id },
+          subscriptions: []
+        }
+        if Settings.tijuana.email_subscription_id
+          member_hash[:subscriptions].push({
+            id: Settings.tijuana.email_subscription_id,
+            action: is_member ? 'subscribe' : 'unsubscribe'
+          })
+        end
 
-      if Settings.tijuana.email_subscription_id
-        member_hash[:subscriptions].push({
-          id: Settings.tijuana.email_subscription_id,
-          action: !is_member ? 'unsubscribe' : 'subscribe'
-        })
-      end
+        if Settings.tijuana.calling_subscription_id
+          member_hash[:subscriptions].push({
+            id: Settings.tijuana.calling_subscription_id,
+            action: is_member && !do_not_call ? 'subscribe' : 'unsubscribe'
+          })
+        end
 
-      if Settings.tijuana.calling_subscription_id
-        member_hash[:subscriptions].push({
-          id: Settings.tijuana.calling_subscription_id,
-          action: do_not_call ? 'unsubscribe' : 'subscribe'
-        })
-      end
+        if Settings.tijuana.sms_subscription_id
+          member_hash[:subscriptions].push({
+            id: Settings.tijuana.sms_subscription_id,
+            action: is_member && !do_not_sms ? 'subscribe' : 'unsubscribe'
+          })
+        end
 
-      if Settings.tijuana.sms_subscription_id
-        member_hash[:subscriptions].push({
-          id: Settings.tijuana.sms_subscription_id,
-          action: do_not_sms ? 'unsubscribe' : 'subscribe'
-        })
-      end
+        standard_home = PhoneNumber.standardise_phone_number(home_number) if home_number.present?
+        standard_mobile = PhoneNumber.standardise_phone_number(mobile_number) if mobile_number.present?
+        member_hash[:phones].push(phone: standard_home) if standard_home.present?
+        member_hash[:phones].push(phone: standard_mobile) if standard_mobile.present? and standard_mobile != standard_home
 
-      standard_home = PhoneNumber.standardise_phone_number(home_number) if home_number.present?
-      standard_mobile = PhoneNumber.standardise_phone_number(mobile_number) if mobile_number.present?
-      member_hash[:phones].push(phone: standard_home) if standard_home.present?
-      member_hash[:phones].push(phone: standard_mobile) if standard_mobile.present? and standard_mobile != standard_home
-
-      begin
-        UpsertMember.call(
-          member_hash,
-          entry_point: 'tijuana:fetch_updated_users',
+        begin
+          UpsertMember.call(
+            member_hash,
+            entry_point: 'tijuana:fetch_updated_users',
           ignore_name_change: false
-        )
-      rescue ActiveRecord::RecordInvalid => e
-        Rails.logger.error "Tijuana member sync id:#{id}, error: #{e.message}"
-        raise
+          )
+        rescue Exception => e
+          Rails.logger.error "Tijuana member sync id:#{id}, error: #{e.message}"
+          raise
+        end
       end
     end
   end

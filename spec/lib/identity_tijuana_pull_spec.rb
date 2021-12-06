@@ -78,8 +78,8 @@ describe IdentityTijuana do
       expect(member_with_email_and_calling.is_subscribed_to?(@sms_sub)).to eq(true)
     end
 
-    it 'unsubscribes people' do
-      user = FactoryBot.create(:tijuana_user, is_member: false, do_not_call: true, do_not_sms: true)
+    it 'unsubscribes non-members from all subscriptions' do
+      user = FactoryBot.create(:tijuana_user, is_member: false, do_not_call: false, do_not_sms: false)
       member_with_email_and_calling = FactoryBot.create(:member)
       member_with_email_and_calling.update_attributes(email: user.email)
 
@@ -87,6 +87,19 @@ describe IdentityTijuana do
 
       member_with_email_and_calling.reload
       expect(member_with_email_and_calling.is_subscribed_to?(@email_sub)).to eq(false)
+      expect(member_with_email_and_calling.is_subscribed_to?(@calling_sub)).to eq(false)
+      expect(member_with_email_and_calling.is_subscribed_to?(@sms_sub)).to eq(false)
+    end
+
+    it 'unsubscribes members from sms and calling' do
+      user = FactoryBot.create(:tijuana_user, is_member: true, do_not_call: true, do_not_sms: true)
+      member_with_email_and_calling = FactoryBot.create(:member)
+      member_with_email_and_calling.update_attributes(email: user.email)
+
+      IdentityTijuana.fetch_updated_users(@sync_id) {}
+
+      member_with_email_and_calling.reload
+      expect(member_with_email_and_calling.is_subscribed_to?(@email_sub)).to eq(true)
       expect(member_with_email_and_calling.is_subscribed_to?(@calling_sub)).to eq(false)
       expect(member_with_email_and_calling.is_subscribed_to?(@sms_sub)).to eq(false)
     end
@@ -189,22 +202,6 @@ describe IdentityTijuana do
       expect(economy_tag.member_count).to eq(2)
 
       expect(Member.count).to eq(4)
-    end
-  end
-
-  context '#get_pull_batch_amount' do
-    context 'with no settings parameters set' do
-      it 'should return default class constant' do
-        expect(IdentityTijuana.get_pull_batch_amount).to eq(1000)
-      end
-    end
-    context 'with settings parameters set' do
-      before(:each) do
-        Settings.stub_chain(:tijuana, :pull_batch_amount) { 100 }
-      end
-      it 'should return set variable' do
-        expect(IdentityTijuana.get_pull_batch_amount).to eq(100)
-      end
     end
   end
 end

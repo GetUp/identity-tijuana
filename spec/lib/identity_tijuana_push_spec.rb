@@ -31,6 +31,10 @@ describe IdentityTijuana do
       @sync_id = 1
       @external_system_params = JSON.generate({'tag' => 'test_tag'})
 
+      allow(Settings).to receive_message_chain("tijuana.push_batch_amount") { 10 }
+      allow(Settings).to receive_message_chain("tijuana.api.url") { "http://tijuana" }
+      allow(Settings).to receive_message_chain("tijuana.api.secret") { "blarg" }
+
       2.times { FactoryBot.create(:member) }
       FactoryBot.create(:member_without_email)
       @members = Member.all.with_email
@@ -51,19 +55,34 @@ describe IdentityTijuana do
     end
   end
 
-  context '#get_push_batch_amount' do
-    context 'with no settings parameters set' do
-      it 'should return default class constant' do
-        expect(IdentityTijuana.get_push_batch_amount).to eq(1000)
-      end
+  context 'with server errors' do
+    before(:each) do
+      clean_external_database
+
+      @sync_id = 1
+      @external_system_params = JSON.generate({'tag' => 'test_tag'})
+
+      allow(Settings).to receive_message_chain("tijuana.push_batch_amount") { 10 }
+      allow(Settings).to receive_message_chain("tijuana.api.url") { "http://tijuana" }
+      allow(Settings).to receive_message_chain("tijuana.api.secret") { "blarg" }
+
+      2.times { FactoryBot.create(:member) }
+      FactoryBot.create(:member_without_email)
+      @members = Member.all.with_email
     end
-    context 'with settings parameters set' do
-      before(:each) do
-        Settings.stub_chain(:tijuana, :push_batch_amount) { 100 }
-      end
-      it 'should return set variable' do
-        expect(IdentityTijuana.get_push_batch_amount).to eq(100)
-      end
+
+    it 'raises an error on connection refused' do
+      stub_request(:post, "tijuana").to_raise(Errno::ECONNREFUSED)
+      expect {
+        IdentityTijuana.push_in_batches(1, @members, @external_system_params)
+      }.to raise_error(Errno::ECONNREFUSED)
+    end
+
+    it 'raises an error on error 500' do
+      stub_request(:post, "tijuana").to_return(status: [500, "Test Error"])
+      expect {
+        IdentityTijuana.push_in_batches(1, @members, @external_system_params)
+      }.to raise_error(RuntimeError)
     end
   end
 end

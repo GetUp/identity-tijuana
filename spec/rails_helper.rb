@@ -57,11 +57,12 @@ RSpec.configure do |config|
 
   config.before(:suite) do
     # Speed up tests by using :transaction
-    DatabaseCleaner.strategy = :transaction
+    DatabaseCleaner[:active_record].strategy = :transaction
     # And clean initially using :truncation
-    DatabaseCleaner.clean_with(:truncation)
+    DatabaseCleaner[:active_record].clean_with(:truncation)
+
     # Enable redis cleaning too (:truncation is the only option)
-    DatabaseCleaner[:redis].strategy = :truncation
+    DatabaseCleaner[:redis].strategy = :deletion
     # And clean initially
     DatabaseCleaner[:redis].clean
   end
