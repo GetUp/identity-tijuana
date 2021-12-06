@@ -3,7 +3,7 @@ source 'https://rubygems.org'
 gemspec
 gem 'rails', '~> 6.0.0'
 gem 'pg'
-gem 'active_model_serializers', '~> 0.10.7'
+gem 'active_model_serializers'
 gem 'httpclient'
 gem 'sidekiq'
 gem 'sidekiq-batch'
