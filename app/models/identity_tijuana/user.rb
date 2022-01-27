@@ -2,8 +2,8 @@ module IdentityTijuana
   class User < ApplicationRecord
     include ReadWrite
     self.table_name = 'users'
-    has_many :taggings
-    has_many :tags, through: :users
+    has_many :taggings, -> { where(taggable_type: 'User') }, foreign_key: 'taggable_id'
+    has_many :tags, through: :taggings
     belongs_to :postcode, optional: true
 
     scope :updated_users, -> (last_updated_at) {
@@ -21,6 +21,10 @@ module IdentityTijuana
     def self.import(user_id, sync_id)
       user = User.find(user_id)
       user.import(sync_id)
+    end
+
+    def has_tag(tag_name)
+      tags.where(name: tag_name).first != nil
     end
 
     def import(sync_id)
@@ -41,9 +45,14 @@ module IdentityTijuana
             state: postcode.try(:state),
             postcode: postcode.try(:number)
           }],
+          custom_fields: [],
           external_ids: { tijuana: id },
           subscriptions: []
         }
+
+        member_hash[:custom_fields].push({name: 'deceased', value: 'true'}) if (has_tag('deceased'))
+        member_hash[:custom_fields].push({name: 'rts', value: 'true'}) if (has_tag('rts'))
+
         if Settings.tijuana.email_subscription_id
           member_hash[:subscriptions].push({
             id: Settings.tijuana.email_subscription_id,
