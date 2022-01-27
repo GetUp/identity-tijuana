@@ -44,7 +44,7 @@ module IdentityTijuana
     end
   end
 
-  def self.worker_currenly_running?(method_name)
+  def self.worker_currently_running?(method_name)
     workers = Sidekiq::Workers.new
     workers.each do |_process_id, _thread_id, work|
       matched_process = work["payload"]["args"] = [SYSTEM_NAME, method_name]
@@ -78,7 +78,7 @@ module IdentityTijuana
 
   def self.fetch_updated_users(sync_id)
     ## Do not run method if another worker is currently processing this method
-    yield 0, {}, {}, true if self.worker_currenly_running?(__method__.to_s)
+    yield 0, {}, {}, true if self.worker_currently_running?(__method__.to_s)
 
     started_at = DateTime.now
     last_updated_at = Time.parse(Sidekiq.redis { |r| r.get 'tijuana:users:last_updated_at' } || '1970-01-01 00:00:00')
@@ -127,7 +127,7 @@ module IdentityTijuana
 
   def self.fetch_latest_taggings(sync_id)
     ## Do not run method if another worker is currently processing this method
-    yield 0, {}, {}, true if self.worker_currenly_running?(__method__.to_s)
+    yield 0, {}, {}, true if self.worker_currently_running?(__method__.to_s)
 
     latest_tagging_scope_limit = 50000
     started_at = DateTime.now
