@@ -7,6 +7,16 @@ module IdentityTijuana
   PULL_JOBS = [[:fetch_updated_users, 10.minutes], [:fetch_latest_taggings, 5.minutes]]
   MEMBER_RECORD_DATA_TYPE='object'
 
+  def self.get_redis_date(redis_identifier)
+    date_str = Sidekiq.redis { |r| r.get redis_identifier } || '1970-01-01 00:00:00'
+    Time.find_zone('UTC').parse(date_str)
+  end
+
+  def self.set_redis_date(redis_identifier, date_time_value)
+    date_str = date_time_value&.strftime('%Y-%m-%d %H:%M:%S.%N') # Ensures fractional seconds are retained
+    Sidekiq.redis { |r| r.set redis_identifier, date_str }
+  end
+
   def self.push(sync_id, member_ids, external_system_params)
     begin
       members = Member.where(id: member_ids).with_email
@@ -81,7 +91,7 @@ module IdentityTijuana
     yield 0, {}, {}, true if self.worker_currently_running?(__method__.to_s)
 
     started_at = DateTime.now
-    last_updated_at = Time.parse(Sidekiq.redis { |r| r.get 'tijuana:users:last_updated_at' } || '1970-01-01 00:00:00')
+    last_updated_at = get_redis_date('tijuana:users:last_updated_at')
     updated_users = User.updated_users(last_updated_at)
     updated_users_all = User.updated_users_all(last_updated_at)
     updated_users.each do |user|
@@ -89,7 +99,7 @@ module IdentityTijuana
     end
 
     unless updated_users.empty?
-      Sidekiq.redis { |r| r.set 'tijuana:users:last_updated_at', updated_users.last.updated_at }
+      set_redis_date('tijuana:users:last_updated_at', updated_users.last.updated_at)
     end
 
     execution_time_seconds = ((DateTime.now - started_at) * 24 * 60 * 60).to_i
@@ -132,7 +142,7 @@ module IdentityTijuana
     latest_tagging_scope_limit = 50000
     started_at = DateTime.now
     last_id = (Sidekiq.redis { |r| r.get 'tijuana:taggings:last_id' } || 0).to_i
-    users_last_updated_at = Time.parse(Sidekiq.redis { |r| r.get 'tijuana:users:last_updated_at' } || '1970-01-01 00:00:00')
+    users_last_updated_at = get_redis_date('tijuana:users:last_updated_at')
     connection = ActiveRecord::Base.connection == List.connection ? ActiveRecord::Base.connection : List.connection
 
     tags_remaining_behind_sql = %{
@@ -233,7 +243,7 @@ module IdentityTijuana
         List.find(list_ids).each(&:copy_to_redshift)
       end
 
-      Sidekiq.redis { |r| r.set 'tijuana:taggings:last_id', results.last[2] }
+      set_redis_date('tijuana:taggings:last_id', results.last[2])
     end
 
     execution_time_seconds = ((DateTime.now - started_at) * 24 * 60 * 60).to_i

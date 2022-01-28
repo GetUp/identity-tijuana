@@ -8,14 +8,14 @@ module IdentityTijuana
 
     scope :updated_users, -> (last_updated_at) {
       includes(:postcode)
-      .where('users.updated_at >= ?', last_updated_at)
+      .where('users.updated_at > ?', last_updated_at)
       .order('users.updated_at')
       .limit(Settings.tijuana.pull_batch_amount)
     }
 
     scope :updated_users_all, -> (last_updated_at) {
       includes(:postcode)
-      .where('users.updated_at >= ?', last_updated_at)
+      where('users.updated_at > ?', last_updated_at)
     }
 
     def self.import(user_id, sync_id)
