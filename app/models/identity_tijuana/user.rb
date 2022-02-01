@@ -51,8 +51,8 @@ module IdentityTijuana
           subscriptions: []
         }
 
-        member_hash[:custom_fields].push({name: 'deceased', value: 'true'}) if (has_tag('deceased'))
-        member_hash[:custom_fields].push({name: 'rts', value: 'true'}) if (has_tag('rts'))
+        member_hash[:custom_fields].push({name: 'deceased', value: 'true'}) if has_tag('deceased')
+        member_hash[:custom_fields].push({name: 'rts', value: 'true'}) if has_tag('rts')
 
         if Settings.tijuana.email_subscription_id
           member_hash[:subscriptions].push({
@@ -84,7 +84,7 @@ module IdentityTijuana
           UpsertMember.call(
             member_hash,
             entry_point: 'tijuana:fetch_updated_users',
-          ignore_name_change: false
+            ignore_name_change: false
           )
         rescue Exception => e
           Rails.logger.error "Tijuana member sync id:#{id}, error: #{e.message}"
