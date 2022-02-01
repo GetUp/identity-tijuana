@@ -75,8 +75,8 @@ module IdentityTijuana
           })
         end
 
-        standard_home = PhoneNumber.standardise_phone_number(home_number) if home_number.present?
-        standard_mobile = PhoneNumber.standardise_phone_number(mobile_number) if mobile_number.present?
+        standard_home = standardise_phone_number(home_number)
+        standard_mobile = standardise_phone_number(mobile_number)
         member_hash[:phones].push(phone: standard_home) if standard_home.present?
         member_hash[:phones].push(phone: standard_mobile) if standard_mobile.present? and standard_mobile != standard_home
 
@@ -90,6 +90,15 @@ module IdentityTijuana
           Rails.logger.error "Tijuana member sync id:#{id}, error: #{e.message}"
           raise
         end
+      end
+    end
+
+    def standardise_phone_number(phone_number)
+      begin
+        PhoneNumber.standardise_phone_number(phone_number) if phone_number.present?
+      rescue => e
+        logger.warn "#{e.class.name} occurred while standardising phone number #{phone_number}"
+        nil
       end
     end
   end
