@@ -2,6 +2,7 @@ module IdentityTijuana
   class User < ApplicationRecord
     include ReadWrite
     self.table_name = 'users'
+    has_many :donations
     has_many :taggings, -> { where(taggable_type: 'User') }, foreign_key: 'taggable_id'
     has_many :tags, through: :taggings
     belongs_to :postcode, optional: true
