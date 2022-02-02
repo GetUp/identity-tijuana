@@ -6,7 +6,8 @@ module IdentityTijuana
     has_many :transactions
 
     scope :updated_donations, -> (last_updated_at, exclude_from) {
-      where('donations.updated_at > ?', last_updated_at)
+      includes(:transactions)
+        .where('donations.updated_at > ?', last_updated_at)
         .and(where('donations.updated_at < ?', exclude_from))
         .order('donations.updated_at')
         .limit(Settings.tijuana.pull_batch_amount)
