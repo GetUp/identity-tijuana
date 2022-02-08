@@ -92,6 +92,7 @@ module IdentityTijuana
 
     started_at = DateTime.now
     last_updated_at = get_redis_date('tijuana:users:last_updated_at')
+    donations_cutoff_default = DateTime.now
     updated_users = User.updated_users(last_updated_at)
     updated_users_all = User.updated_users_all(last_updated_at)
     updated_users.each do |user|
@@ -128,7 +129,7 @@ module IdentityTijuana
     # number of users in the batch is less than the batch size, then our
     # users should now be up-to-date, so we can safely process all available
     # donations.
-    donations_cutoff = (batch_size && updated_users.count >= batch_size) ? last_updated_at : DateTime.now
+    donations_cutoff = (batch_size && updated_users.count >= batch_size) ? last_updated_at : donations_cutoff_default
     sync = Sync.create!(
       external_system: 'tijuana',
       external_system_params: {
