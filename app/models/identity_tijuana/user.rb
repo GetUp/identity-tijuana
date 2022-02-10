@@ -47,7 +47,6 @@ module IdentityTijuana
           lastname: last_name,
           emails: [{ email: email }],
           phones: [],
-          addresses: [address_hash],
           custom_fields: [],
           external_ids: { tijuana: id },
           subscriptions: []
@@ -86,9 +85,7 @@ module IdentityTijuana
           })
         end
 
-        if return_to_sender
-          member_hash.delete(:addresses)
-        end
+        member_hash[:addresses] = [address_hash] unless return_to_sender
 
         standard_home = standardise_phone_number(home_number)
         standard_mobile = standardise_phone_number(mobile_number)
