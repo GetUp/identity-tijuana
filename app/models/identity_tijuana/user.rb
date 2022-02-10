@@ -98,14 +98,13 @@ module IdentityTijuana
             entry_point: 'tijuana:fetch_updated_users',
             ignore_name_change: false
           )
-          # Destroy the address if "return to sender" is set. Unfortunately
+          # Destroy addresses if "return to sender" is set. Unfortunately
           # this is beyond the capabilities of ID's member upsert processing,
-          # so we need to do it as an extra step.
+          # so we need to do it as an extra step. We may need to revisit this
+          # to play nice with addresses coming into ID from other sources.
           if return_to_sender
             if (member = Member.find_by_external_id(:tijuana, id))
-              if (address = member.addresses.find_by(address_hash))
-                address.destroy
-              end
+              member.addresses.delete_all
             end
           end
         rescue Exception => e
