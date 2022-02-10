@@ -36,7 +36,7 @@ module IdentityTijuana
               # started_at: nil,
               # ended_at: nil,
               frequency: frequency,
-              # medium: nil,
+              medium: payment_method,
               source: 'tijuana',
               # initial_amount: nil,
               current_amount: amount_in_cents / 100.0,
