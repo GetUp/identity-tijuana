@@ -34,46 +34,60 @@ module IdentityTijuana
       if existing.present? && existing.ghosting_started?
           Rails.logger.warn "Tijuana member (#{id}) is ghosted (#{existing.id}), not updating"
       else        
+        address_hash = {
+          line1: street_address,
+          town: suburb,
+          country: country_iso,
+          state: postcode.try(:state),
+          postcode: postcode.try(:number)
+        }
         member_hash = {
           ignore_phone_number_match: true,
           firstname: first_name,
           lastname: last_name,
           emails: [{ email: email }],
           phones: [],
-          addresses: [{
-            line1: street_address,
-            town: suburb,
-            country: country_iso,
-            state: postcode.try(:state),
-            postcode: postcode.try(:number)
-          }],
+          addresses: [address_hash],
           custom_fields: [],
           external_ids: { tijuana: id },
           subscriptions: []
         }
 
-        member_hash[:custom_fields].push({name: 'deceased', value: 'true'}) if has_tag('deceased')
-        member_hash[:custom_fields].push({name: 'rts', value: 'true'}) if has_tag('rts')
+        deceased = has_tag('deceased')
+        return_to_sender = has_tag('rts')
+
+        member_hash[:custom_fields].push({name: 'deceased', value: deceased.to_s})
+        member_hash[:custom_fields].push({name: 'rts', value: return_to_sender.to_s})
+
+        is_living_member = is_member && !deceased
+        reason = deceased ? 'deceased' : nil
 
         if Settings.tijuana.email_subscription_id
           member_hash[:subscriptions].push({
             id: Settings.tijuana.email_subscription_id,
-            action: is_member ? 'subscribe' : 'unsubscribe'
+            action: is_living_member ? 'subscribe' : 'unsubscribe',
+            reason: reason
           })
         end
 
         if Settings.tijuana.calling_subscription_id
           member_hash[:subscriptions].push({
             id: Settings.tijuana.calling_subscription_id,
-            action: is_member && !do_not_call ? 'subscribe' : 'unsubscribe'
+            action: is_living_member && !do_not_call ? 'subscribe' : 'unsubscribe',
+            reason: reason
           })
         end
 
         if Settings.tijuana.sms_subscription_id
           member_hash[:subscriptions].push({
             id: Settings.tijuana.sms_subscription_id,
-            action: is_member && !do_not_sms ? 'subscribe' : 'unsubscribe'
+            action: is_living_member && !do_not_sms ? 'subscribe' : 'unsubscribe',
+            reason: reason
           })
+        end
+
+        if return_to_sender
+          member_hash.delete(:addresses)
         end
 
         standard_home = standardise_phone_number(home_number)
@@ -87,6 +101,16 @@ module IdentityTijuana
             entry_point: 'tijuana:fetch_updated_users',
             ignore_name_change: false
           )
+          # Destroy the address if "return to sender" is set. Unfortunately
+          # this is beyond the capabilities of ID's member upsert processing,
+          # so we need to do it as an extra step.
+          if return_to_sender
+            if (member = Member.find_by_external_id(:tijuana, id))
+              if (address = member.addresses.find_by(address_hash))
+                address.destroy
+              end
+            end
+          end
         rescue Exception => e
           Rails.logger.error "Tijuana member sync id:#{id}, error: #{e.message}"
           raise
