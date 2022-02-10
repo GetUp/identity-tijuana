@@ -3,10 +3,12 @@ module IdentityTijuana
     include ReadWrite
     self.table_name = 'donations'
     belongs_to :user
-    has_many :transactions
+    has_many :transactions, -> { order 'transactions.created_at' }
+    has_many :donation_upgrades, -> { order 'donation_upgrades.created_at' }
 
     scope :updated_donations, -> (last_updated_at, exclude_from) {
       includes(:transactions)
+        .includes(:donation_upgrades)
         .where('donations.updated_at > ?', last_updated_at)
         .and(where('donations.updated_at < ?', exclude_from))
         .order('donations.updated_at')
@@ -33,14 +35,16 @@ module IdentityTijuana
           if frequency != 'one_off'
             regular_donation_hash = {
               member_id: member.id,
-              # started_at: nil,
-              # ended_at: nil,
+              started_at: created_at,
+              ended_at: cancelled_at || (active ? nil : updated_at),
               frequency: frequency,
               medium: payment_method,
               source: 'tijuana',
-              # initial_amount: nil,
+              initial_amount: (donation_upgrades.first ?
+                                 donation_upgrades.first.original_amount_in_cents :
+                                 amount_in_cents) / 100.0,
               current_amount: amount_in_cents / 100.0,
-              # amount_last_changed_at: nil,
+              amount_last_changed_at: donation_upgrades.last ? donation_upgrades.last.created_at : nil,
               # smartdebit_reference: nil,
               external_id: id,
               # payment_method_expires_at: nil,
@@ -55,7 +59,10 @@ module IdentityTijuana
               raise
             end
           end
+          refund_transactions = transactions.map { |t| t.refund_of_id ? [ t.refund_of_id, t ] : nil }.compact.to_h
           transactions.each do | transaction |
+            next if transaction.refund_of_id
+            refund_transaction = refund_transactions[transaction.id]
             donation_hash = {
               # member_action_id: nil,
               member_id: member.id,
@@ -63,8 +70,8 @@ module IdentityTijuana
               external_source: 'tijuana',
               external_id: transaction.id,
               # nonce: nil,
-              # medium: nil,
-              # refunded_at: nil,
+              medium: payment_method,
+              refunded_at: refund_transaction ? refund_transaction.created_at : nil,
             }
             donation_hash[:regular_donation_id] = regular_donation_id if regular_donation_id.present?
             begin
