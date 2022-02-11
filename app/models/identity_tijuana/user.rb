@@ -25,10 +25,6 @@ module IdentityTijuana
       user.import(sync_id)
     end
 
-    def has_tag(tag_name)
-      tags.where(name: tag_name).first != nil
-    end
-
     def import(sync_id)
       existing = Member.find_by_external_id(:tijuana, id)
       if existing.present? && existing.ghosting_started?
@@ -54,36 +50,45 @@ module IdentityTijuana
 
         deceased = has_tag('deceased')
         return_to_sender = has_tag('rts')
-
-        member_hash[:custom_fields].push({name: 'deceased', value: deceased.to_s})
-        member_hash[:custom_fields].push({name: 'rts', value: return_to_sender.to_s})
+        update_deceased = update_rts = true
+        member = Member.find_by_external_id(:tijuana, id)
+        if member
+          deceased_custom_field = find_custom_field(member.id, 'deceased')
+          rts_custom_field = find_custom_field(member.id, 'rts')
+          currently_deceased = deceased_custom_field && deceased_custom_field.data == 'true'
+          currently_return_to_sender = rts_custom_field && rts_custom_field.data == 'true'
+          update_deceased = deceased != currently_deceased
+          update_rts = return_to_sender != currently_return_to_sender
+          if update_deceased && !deceased
+            deceased_custom_field.delete if deceased_custom_field
+          end
+          if update_rts && !return_to_sender
+            rts_custom_field.delete if rts_custom_field
+          end
+        end
+        member_hash[:custom_fields].push({name: 'deceased', value: 'true'}) if update_deceased && deceased
+        member_hash[:custom_fields].push({name: 'rts', value: 'true'}) if update_rts && return_to_sender
 
         is_living_member = is_member && !deceased
-        reason = deceased ? 'deceased' : nil
 
-        if Settings.tijuana.email_subscription_id
-          member_hash[:subscriptions].push({
-            id: Settings.tijuana.email_subscription_id,
-            action: is_living_member ? 'subscribe' : 'unsubscribe',
-            reason: reason
-          })
-        end
-
-        if Settings.tijuana.calling_subscription_id
-          member_hash[:subscriptions].push({
-            id: Settings.tijuana.calling_subscription_id,
-            action: is_living_member && !do_not_call ? 'subscribe' : 'unsubscribe',
-            reason: reason
-          })
-        end
-
-        if Settings.tijuana.sms_subscription_id
-          member_hash[:subscriptions].push({
-            id: Settings.tijuana.sms_subscription_id,
-            action: is_living_member && !do_not_sms ? 'subscribe' : 'unsubscribe',
-            reason: reason
-          })
-        end
+        add_subscription_info_if_changed(
+          member,
+          Settings.tijuana.email_subscription_id,
+          is_living_member,
+          member_hash
+        )
+        add_subscription_info_if_changed(
+          member,
+          Settings.tijuana.calling_subscription_id,
+          is_living_member && !do_not_call,
+          member_hash
+        )
+        add_subscription_info_if_changed(
+          member,
+          Settings.tijuana.sms_subscription_id,
+          is_living_member && !do_not_sms,
+          member_hash
+        )
 
         member_hash[:addresses] = [address_hash] unless return_to_sender
 
@@ -98,15 +103,6 @@ module IdentityTijuana
             entry_point: 'tijuana:fetch_updated_users',
             ignore_name_change: false
           )
-          # Destroy addresses if "return to sender" is set. Unfortunately
-          # this is beyond the capabilities of ID's member upsert processing,
-          # so we need to do it as an extra step. We may need to revisit this
-          # to play nice with addresses coming into ID from other sources.
-          if return_to_sender
-            if (member = Member.find_by_external_id(:tijuana, id))
-              member.addresses.delete_all
-            end
-          end
         rescue Exception => e
           Rails.logger.error "Tijuana member sync id:#{id}, error: #{e.message}"
           raise
@@ -114,14 +110,32 @@ module IdentityTijuana
       end
     end
 
-    def standardise_phone_number(phone_number)
-      standard_number = PhoneNumber.standardise_phone_number(phone_number) if phone_number.present?
-      # Temporary workaround for a bug in identity/Phony phone number handling.
-      if standard_number.present? && PhoneNumber.can_detect_mobiles?
-        ndc = Phony.plausible?(standard_number) ? Phony.split(standard_number)[1] : nil
-        standard_number = nil unless ndc.respond_to?(:start_with?)
+    def add_subscription_info_if_changed(member, subscription_id, sub_flag, member_hash)
+      return unless subscription_id
+      update_the_sub = true
+      if member
+        member_subscription = member.member_subscriptions.find_by(subscription_id: subscription_id)
+        curr_sub_flag = member_subscription && member_subscription.unsubscribed_at.blank?
+        update_the_sub = sub_flag != curr_sub_flag
       end
-      standard_number
+      if update_the_sub
+        member_hash[:subscriptions].push({
+          id: subscription_id,
+          action: sub_flag ? 'subscribe' : 'unsubscribe'
+        })
+      end
+    end
+
+    def find_custom_field(member_id, key)
+      CustomField.joins(:custom_field_key).where('member_id = ? and custom_field_keys.name = ?', member_id, key).first
+    end
+
+    def has_tag(tag_name)
+      tags.where(name: tag_name).first != nil
+    end
+
+    def standardise_phone_number(phone_number)
+      PhoneNumber.standardise_phone_number(phone_number) if phone_number.present?
     end
   end
 end
