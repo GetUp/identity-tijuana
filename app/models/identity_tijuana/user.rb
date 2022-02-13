@@ -2,20 +2,22 @@ module IdentityTijuana
   class User < ApplicationRecord
     include ReadWrite
     self.table_name = 'users'
-    has_many :taggings
-    has_many :tags, through: :users
+    has_many :donations
+    has_many :taggings, -> { where(taggable_type: 'User') }, foreign_key: 'taggable_id'
+    has_many :tags, through: :taggings
     belongs_to :postcode, optional: true
 
     scope :updated_users, -> (last_updated_at) {
       includes(:postcode)
-      .where('users.updated_at >= ?', last_updated_at)
+      .includes(:taggings)
+      .includes(:tags)
+      .where('users.updated_at > ?', last_updated_at)
       .order('users.updated_at')
       .limit(Settings.tijuana.pull_batch_amount)
     }
 
     scope :updated_users_all, -> (last_updated_at) {
-      includes(:postcode)
-      .where('users.updated_at >= ?', last_updated_at)
+      where('users.updated_at > ?', last_updated_at)
     }
 
     def self.import(user_id, sync_id)
@@ -28,45 +30,70 @@ module IdentityTijuana
       if existing.present? && existing.ghosting_started?
           Rails.logger.warn "Tijuana member (#{id}) is ghosted (#{existing.id}), not updating"
       else        
+        address_hash = {
+          line1: street_address,
+          town: suburb,
+          country: country_iso,
+          state: postcode.try(:state),
+          postcode: postcode.try(:number)
+        }
         member_hash = {
           ignore_phone_number_match: true,
           firstname: first_name,
           lastname: last_name,
           emails: [{ email: email }],
           phones: [],
-          addresses: [{
-            line1: street_address,
-            town: suburb,
-            country: country_iso,
-            state: postcode.try(:state),
-            postcode: postcode.try(:number)
-          }],
+          custom_fields: [],
           external_ids: { tijuana: id },
           subscriptions: []
         }
-        if Settings.tijuana.email_subscription_id
-          member_hash[:subscriptions].push({
-            id: Settings.tijuana.email_subscription_id,
-            action: is_member ? 'subscribe' : 'unsubscribe'
-          })
-        end
 
-        if Settings.tijuana.calling_subscription_id
-          member_hash[:subscriptions].push({
-            id: Settings.tijuana.calling_subscription_id,
-            action: is_member && !do_not_call ? 'subscribe' : 'unsubscribe'
-          })
+        deceased = has_tag('deceased')
+        return_to_sender = has_tag('rts')
+        update_deceased = update_rts = true
+        member = Member.find_by_external_id(:tijuana, id)
+        if member
+          deceased_custom_field = find_custom_field(member.id, 'deceased')
+          rts_custom_field = find_custom_field(member.id, 'rts')
+          currently_deceased = deceased_custom_field && deceased_custom_field.data == 'true'
+          currently_return_to_sender = rts_custom_field && rts_custom_field.data == 'true'
+          update_deceased = deceased != currently_deceased
+          update_rts = return_to_sender != currently_return_to_sender
+          if update_deceased && !deceased
+            deceased_custom_field.delete if deceased_custom_field
+          end
+          if update_rts && !return_to_sender
+            rts_custom_field.delete if rts_custom_field
+          end
         end
+        member_hash[:custom_fields].push({name: 'deceased', value: 'true'}) if update_deceased && deceased
+        member_hash[:custom_fields].push({name: 'rts', value: 'true'}) if update_rts && return_to_sender
 
-        if Settings.tijuana.sms_subscription_id
-          member_hash[:subscriptions].push({
-            id: Settings.tijuana.sms_subscription_id,
-            action: is_member && !do_not_sms ? 'subscribe' : 'unsubscribe'
-          })
-        end
+        is_living_member = is_member && !deceased
 
-        standard_home = PhoneNumber.standardise_phone_number(home_number) if home_number.present?
-        standard_mobile = PhoneNumber.standardise_phone_number(mobile_number) if mobile_number.present?
+        add_subscription_info_if_changed(
+          member,
+          Settings.tijuana.email_subscription_id,
+          is_living_member,
+          member_hash
+        )
+        add_subscription_info_if_changed(
+          member,
+          Settings.tijuana.calling_subscription_id,
+          is_living_member && !do_not_call,
+          member_hash
+        )
+        add_subscription_info_if_changed(
+          member,
+          Settings.tijuana.sms_subscription_id,
+          is_living_member && !do_not_sms,
+          member_hash
+        )
+
+        member_hash[:addresses] = [address_hash] unless return_to_sender
+
+        standard_home = standardise_phone_number(home_number)
+        standard_mobile = standardise_phone_number(mobile_number)
         member_hash[:phones].push(phone: standard_home) if standard_home.present?
         member_hash[:phones].push(phone: standard_mobile) if standard_mobile.present? and standard_mobile != standard_home
 
@@ -74,13 +101,41 @@ module IdentityTijuana
           UpsertMember.call(
             member_hash,
             entry_point: 'tijuana:fetch_updated_users',
-          ignore_name_change: false
+            ignore_name_change: false
           )
         rescue Exception => e
           Rails.logger.error "Tijuana member sync id:#{id}, error: #{e.message}"
           raise
         end
       end
+    end
+
+    def add_subscription_info_if_changed(member, subscription_id, sub_flag, member_hash)
+      return unless subscription_id
+      update_the_sub = true
+      if member
+        member_subscription = member.member_subscriptions.find_by(subscription_id: subscription_id)
+        curr_sub_flag = member_subscription && member_subscription.unsubscribed_at.blank?
+        update_the_sub = sub_flag != curr_sub_flag
+      end
+      if update_the_sub
+        member_hash[:subscriptions].push({
+          id: subscription_id,
+          action: sub_flag ? 'subscribe' : 'unsubscribe'
+        })
+      end
+    end
+
+    def find_custom_field(member_id, key)
+      CustomField.joins(:custom_field_key).where('member_id = ? and custom_field_keys.name = ?', member_id, key).first
+    end
+
+    def has_tag(tag_name)
+      tags.where(name: tag_name).first != nil
+    end
+
+    def standardise_phone_number(phone_number)
+      PhoneNumber.standardise_phone_number(phone_number) if phone_number.present?
     end
   end
 end
