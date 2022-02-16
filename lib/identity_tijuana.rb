@@ -303,7 +303,7 @@ module IdentityTijuana
         List.find(list_ids).each(&:copy_to_redshift)
       end
 
-      set_redis_date('tijuana:taggings:last_id', results.last[2])
+      Sidekiq.redis { |r| r.set 'tijuana:taggings:last_id', results.last[2] }
     end
 
     execution_time_seconds = ((DateTime.now - started_at) * 24 * 60 * 60).to_i
