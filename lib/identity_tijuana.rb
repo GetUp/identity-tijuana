@@ -4,7 +4,7 @@ module IdentityTijuana
   SYSTEM_NAME = 'tijuana'
   SYNCING = 'tag'
   CONTACT_TYPE = 'email'
-  PULL_JOBS = [[:fetch_updated_users, 10.minutes], [:fetch_latest_taggings, 5.minutes]]
+  PULL_JOBS = [[:fetch_updated_users, 10.minutes], [:fetch_latest_taggings, 10.minutes]]
   MEMBER_RECORD_DATA_TYPE='object'
 
   def self.push(sync_id, member_ids, external_system_params)
