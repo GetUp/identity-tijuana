@@ -54,11 +54,19 @@ module IdentityTijuana
     end
   end
 
-  def self.worker_currently_running?(method_name)
+  def self.worker_currently_running?(method_name, sync_id)
     workers = Sidekiq::Workers.new
     workers.each do |_process_id, _thread_id, work|
-      matched_process = work["payload"]["args"] = [SYSTEM_NAME, method_name]
-      if matched_process
+      args = work["payload"]["args"]
+      worker_sync_id = (args.count > 0) ? args[0] : nil
+      worker_sync = worker_sync_id ? Sync.find_by(id: worker_sync_id) : nil
+      next unless worker_sync
+      worker_system = worker_sync.external_system
+      worker_method_name = JSON.parse(worker_sync.external_system_params)["pull_job"]
+      already_running = (worker_system == SYSTEM_NAME &&
+        worker_method_name == method_name &&
+        worker_sync_id != sync_id)
+      if already_running
         puts ">>> #{SYSTEM_NAME.titleize} #{method_name} skipping as worker already running ..."
         return true
       end
@@ -88,7 +96,10 @@ module IdentityTijuana
 
   def self.fetch_updated_users(sync_id)
     ## Do not run method if another worker is currently processing this method
-    yield 0, {}, {}, true if self.worker_currently_running?(__method__.to_s)
+    if self.worker_currently_running?(__method__.to_s, sync_id)
+      yield 0, {}, {}, true
+      return
+    end
 
     started_at = DateTime.now
     last_updated_at = get_redis_date('tijuana:users:last_updated_at')
@@ -159,7 +170,10 @@ module IdentityTijuana
 
   def self.fetch_donation_updates(sync_id)
     ## Do not run method if another worker is currently processing this method
-    yield 0, {}, {}, true if self.worker_currently_running?(__method__.to_s)
+    if self.worker_currently_running?(__method__.to_s, sync_id)
+      yield 0, {}, {}, true
+      return
+    end
 
     started_at = DateTime.now
     last_updated_at = get_redis_date('tijuana:donations:last_updated_at')
@@ -197,7 +211,10 @@ module IdentityTijuana
 
   def self.fetch_latest_taggings(sync_id)
     ## Do not run method if another worker is currently processing this method
-    yield 0, {}, {}, true if self.worker_currently_running?(__method__.to_s)
+    if self.worker_currently_running?(__method__.to_s, sync_id)
+      yield 0, {}, {}, true
+      return
+    end
 
     latest_tagging_scope_limit = 50000
     started_at = DateTime.now
