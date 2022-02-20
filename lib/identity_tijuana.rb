@@ -4,7 +4,11 @@ module IdentityTijuana
   SYSTEM_NAME = 'tijuana'
   SYNCING = 'tag'
   CONTACT_TYPE = 'email'
-  PULL_JOBS = [[:fetch_updated_users, 10.minutes], [:fetch_latest_taggings, 10.minutes]]
+  PULL_JOBS = [
+    [:fetch_updated_users, 10.minutes],
+    [:fetch_donation_updates, 10.minutes],
+    [:fetch_latest_taggings, 1.minutes],
+  ]
   MEMBER_RECORD_DATA_TYPE='object'
 
   def self.get_redis_date(redis_identifier)
@@ -103,7 +107,7 @@ module IdentityTijuana
 
     started_at = DateTime.now
     last_updated_at = get_redis_date('tijuana:users:last_updated_at')
-    donations_cutoff_default = DateTime.now
+    users_dependent_data_cutoff = DateTime.now
     updated_users = User.updated_users(last_updated_at)
     updated_users_all = User.updated_users_all(last_updated_at)
     updated_users.each do |user|
@@ -114,6 +118,9 @@ module IdentityTijuana
       last_updated_at = updated_users.last.updated_at
       set_redis_date('tijuana:users:last_updated_at', last_updated_at)
     end
+
+    users_dependent_data_cutoff = last_updated_at if (updated_users.count >= Settings.tijuana.pull_batch_amount)
+    set_redis_date('tijuana:users:dependent_data_cutoff', users_dependent_data_cutoff)
 
     execution_time_seconds = ((DateTime.now - started_at) * 24 * 60 * 60).to_i
     yield(
@@ -131,26 +138,6 @@ module IdentityTijuana
       },
       false
     )
-
-    # Kick off an asynchronous donations update.
-    batch_size = Settings.tijuana.pull_batch_amount
-    # The donations cutoff ensures that donations occurring after the most
-    # recent user timestamp don't get processed. This defers the import of
-    # donations linked to new members that haven't been imported yet. If the
-    # number of users in the batch is less than the batch size, then our
-    # users should now be up-to-date, so we can safely process all available
-    # donations.
-    donations_cutoff = (batch_size && updated_users.count >= batch_size) ? last_updated_at : donations_cutoff_default
-    sync = Sync.create!(
-      external_system: 'tijuana',
-      external_system_params: {
-        pull_job: :fetch_donation_updates,
-        time_to_run: DateTime.now,
-        donations_cutoff: donations_cutoff.strftime('%Y-%m-%d %H:%M:%S.%N')
-      }.to_json,
-      sync_type: Sync::PULL_SYNC_TYPE,
-      )
-    PullExternalSystemsWorker.perform_async(sync.id)
   end
 
   def self.fetch_users_for_dedupe
@@ -177,12 +164,9 @@ module IdentityTijuana
 
     started_at = DateTime.now
     last_updated_at = get_redis_date('tijuana:donations:last_updated_at')
-    external_system_params = Sync.find(sync_id).external_system_params
-    donations_cutoff_str = JSON.parse(external_system_params)['donations_cutoff']
-    donations_cutoff = Time.find_zone('UTC').parse(donations_cutoff_str) if donations_cutoff_str.present?
-    donations_cutoff = DateTime.now unless donations_cutoff
-    updated_donations = IdentityTijuana::Donation.updated_donations(last_updated_at, donations_cutoff)
-    updated_donations_all = IdentityTijuana::Donation.updated_donations_all(last_updated_at, donations_cutoff)
+    users_dependent_data_cutoff = get_redis_date('tijuana:users:dependent_data_cutoff')
+    updated_donations = IdentityTijuana::Donation.updated_donations(last_updated_at, users_dependent_data_cutoff)
+    updated_donations_all = IdentityTijuana::Donation.updated_donations_all(users_dependent_data_cutoff, users_dependent_data_cutoff)
     updated_donations.each do |donation|
       IdentityTijuana::Donation.import(donation.id, sync_id)
     end
@@ -219,7 +203,7 @@ module IdentityTijuana
     latest_tagging_scope_limit = 50000
     started_at = DateTime.now
     last_id = (Sidekiq.redis { |r| r.get 'tijuana:taggings:last_id' } || 0).to_i
-    users_last_updated_at = get_redis_date('tijuana:users:last_updated_at')
+    users_dependent_data_cutoff = get_redis_date('tijuana:users:dependent_data_cutoff')
     connection = ActiveRecord::Base.connection == List.connection ? ActiveRecord::Base.connection : List.connection
 
     tags_remaining_behind_sql = %{
@@ -229,7 +213,7 @@ module IdentityTijuana
         ON t.id = tu.tag_id
       WHERE tu.id > #{last_id}
         AND taggable_type = 'User'
-        AND (tu.created_at < #{connection.quote(users_last_updated_at)} OR tu.created_at is null)
+        AND (tu.created_at < #{connection.quote(users_dependent_data_cutoff)} OR tu.created_at is null)
         AND t.name like '%_syncid%'
     }
 
@@ -240,7 +224,7 @@ module IdentityTijuana
         ON t.id = tu.tag_id
       WHERE tu.id > #{last_id}
         AND taggable_type = 'User'
-        AND (tu.created_at < #{connection.quote(users_last_updated_at)} OR tu.created_at is null)
+        AND (tu.created_at < #{connection.quote(users_dependent_data_cutoff)} OR tu.created_at is null)
         AND t.name like '%_syncid%'
       ORDER BY tu.id
       LIMIT #{latest_tagging_scope_limit}
