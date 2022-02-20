@@ -259,7 +259,7 @@ module IdentityTijuana
       end
 
       puts 'Inserting value strings and merging'
-      table_name = "tmp_#{SecureRandom.hex(16)}"
+      table_name = "tmp_#{sync_id}_#{SecureRandom.hex(16)}"
       connection.execute(%{
         CREATE TABLE #{table_name} (tijuana_id TEXT, tag TEXT, tijuana_author_id INTEGER);
         INSERT INTO #{table_name} VALUES #{value_strings.join(',')};
