@@ -223,7 +223,7 @@ module IdentityTijuana
     connection = ActiveRecord::Base.connection == List.connection ? ActiveRecord::Base.connection : List.connection
 
     tags_remaining_behind_sql = %{
-      SELECT distinct(t.name)
+      SELECT count(*)
       FROM taggings tu #{'FORCE INDEX (PRIMARY)' unless Settings.tijuana.database_url.start_with? 'postgres'}
       JOIN tags t
         ON t.id = tu.tag_id
@@ -249,6 +249,7 @@ module IdentityTijuana
     puts 'Getting latest taggings'
     tags_remaining_results = IdentityTijuana::Tagging.connection.execute(tags_remaining_behind_sql).to_a
     results = IdentityTijuana::Tagging.connection.execute(scoped_latest_taggings_sql).to_a
+    tags_remaining_count = tags_remaining_results[0][0]
 
     unless results.empty?
       puts 'Creating value strings'
@@ -335,7 +336,7 @@ module IdentityTijuana
         started_at: started_at,
         completed_at: DateTime.now,
         execution_time_seconds: execution_time_seconds,
-        remaining_behind: tags_remaining_results.count
+        remaining_behind: tags_remaining_count
       },
       false
     )
