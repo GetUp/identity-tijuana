@@ -7,7 +7,7 @@ module IdentityTijuana
   PULL_JOBS = [
     [:fetch_updated_users, 10.minutes],
     [:fetch_donation_updates, 10.minutes],
-    [:fetch_latest_taggings, 1.minutes],
+    [:fetch_latest_taggings, 10.minutes],
   ]
   MEMBER_RECORD_DATA_TYPE='object'
 
