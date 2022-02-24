@@ -4,17 +4,51 @@ module IdentityTijuana
   SYSTEM_NAME = 'tijuana'
   SYNCING = 'tag'
   CONTACT_TYPE = 'email'
-  PULL_JOBS = [[:fetch_updated_users, 10.minutes], [:fetch_latest_taggings, 5.minutes]]
+  PULL_JOBS = [
+    [:fetch_user_updates, 10.minutes],
+    [:fetch_donation_updates, 10.minutes],
+    [:fetch_tagging_updates, 10.minutes],
+  ]
   MEMBER_RECORD_DATA_TYPE='object'
+  MUTEX_EXPIRY_DURATION = 10.minutes
 
-  def self.get_redis_date(redis_identifier)
-    date_str = Sidekiq.redis { |r| r.get redis_identifier } || '1970-01-01 00:00:00'
-    Time.find_zone('UTC').parse(date_str)
+  def self.acquire_mutex_lock(method_name, sync_id)
+    mutex_name = "#{SYSTEM_NAME}:mutex:#{method_name}"
+    new_mutex_expiry = DateTime.now + MUTEX_EXPIRY_DURATION
+    mutex_acquired = set_redis_date(mutex_name, new_mutex_expiry, true)
+    unless mutex_acquired
+      mutex_expiry = get_redis_date(mutex_name)
+      if mutex_expiry.past?
+        unless worker_currently_running?(method_name, sync_id)
+          delete_redis_date(mutex_name)
+          mutex_acquired = set_redis_date(mutex_name, new_mutex_expiry, true)
+        end
+      end
+    end
+    mutex_acquired
   end
 
-  def self.set_redis_date(redis_identifier, date_time_value)
-    date_str = date_time_value&.strftime('%Y-%m-%d %H:%M:%S.%N') # Ensures fractional seconds are retained
-    Sidekiq.redis { |r| r.set redis_identifier, date_str }
+  def self.release_mutex_lock(method_name)
+    mutex_name = "#{SYSTEM_NAME}:mutex:#{method_name}"
+    delete_redis_date(mutex_name)
+  end
+
+  def self.get_redis_date(redis_identifier, default_value=Time.at(0))
+    date_str = Sidekiq.redis { |r| r.get redis_identifier }
+    date_str ? Time.parse(date_str) : default_value
+  end
+
+  def self.set_redis_date(redis_identifier, date_time_value, as_mutex=false)
+    date_str = date_time_value&.strftime('%Y-%m-%d %H:%M:%S.%N %Z') # Ensures fractional seconds are retained
+    if as_mutex
+      Sidekiq.redis { |r| r.setnx redis_identifier, date_str }
+    else
+      Sidekiq.redis { |r| r.set redis_identifier, date_str }
+    end
+  end
+
+  def self.delete_redis_date(redis_identifier)
+    Sidekiq.redis { |r| r.del redis_identifier }
   end
 
   def self.push(sync_id, member_ids, external_system_params)
@@ -54,16 +88,20 @@ module IdentityTijuana
     end
   end
 
-  def self.worker_currently_running?(method_name)
+  def self.worker_currently_running?(method_name, sync_id)
     workers = Sidekiq::Workers.new
     workers.each do |_process_id, _thread_id, work|
-      matched_process = work["payload"]["args"] = [SYSTEM_NAME, method_name]
-      if matched_process
-        puts ">>> #{SYSTEM_NAME.titleize} #{method_name} skipping as worker already running ..."
-        return true
-      end
+      args = work["payload"]["args"]
+      worker_sync_id = (args.count > 0) ? args[0] : nil
+      worker_sync = worker_sync_id ? Sync.find_by(id: worker_sync_id) : nil
+      next unless worker_sync
+      worker_system = worker_sync.external_system
+      worker_method_name = JSON.parse(worker_sync.external_system_params)["pull_job"]
+      already_running = (worker_system == SYSTEM_NAME &&
+        worker_method_name == method_name &&
+        worker_sync_id != sync_id)
+      return true if already_running
     end
-    puts ">>> #{SYSTEM_NAME.titleize} #{method_name} running ..."
     return false
   end
 
@@ -86,13 +124,35 @@ module IdentityTijuana
     end
   end
 
-  def self.fetch_updated_users(sync_id)
-    ## Do not run method if another worker is currently processing this method
-    yield 0, {}, {}, true if self.worker_currently_running?(__method__.to_s)
+  def self.schedule_another_pull_batch(pull_job)
+    sync = Sync.create!(
+      external_system: SYSTEM_NAME,
+      external_system_params: { pull_job: pull_job, time_to_run: DateTime.now }.to_json,
+      sync_type: Sync::PULL_SYNC_TYPE
+    )
+    PullExternalSystemsWorker.perform_async(sync.id)
+  end
 
+  def self.fetch_user_updates(sync_id)
+    begin
+      mutex_acquired = acquire_mutex_lock(__method__.to_s, sync_id)
+      unless mutex_acquired
+        yield 0, {}, {}, true
+        return
+      end
+      need_another_batch = fetch_user_updates_impl(sync_id) do |records_for_import_count, records_for_import, records_for_import_scope, pull_deferred|
+        yield records_for_import_count, records_for_import, records_for_import_scope, pull_deferred
+      end
+    ensure
+      release_mutex_lock(__method__.to_s) if mutex_acquired
+    end
+    schedule_another_pull_batch(__method__.to_s) if need_another_batch
+  end
+
+  def self.fetch_user_updates_impl(sync_id)
     started_at = DateTime.now
     last_updated_at = get_redis_date('tijuana:users:last_updated_at')
-    donations_cutoff_default = DateTime.now
+    users_dependent_data_cutoff = DateTime.now
     updated_users = User.updated_users(last_updated_at)
     updated_users_all = User.updated_users_all(last_updated_at)
     updated_users.each do |user|
@@ -103,6 +163,9 @@ module IdentityTijuana
       last_updated_at = updated_users.last.updated_at
       set_redis_date('tijuana:users:last_updated_at', last_updated_at)
     end
+
+    users_dependent_data_cutoff = last_updated_at if updated_users.count < updated_users_all.count
+    set_redis_date('tijuana:users:dependent_data_cutoff', users_dependent_data_cutoff)
 
     execution_time_seconds = ((DateTime.now - started_at) * 24 * 60 * 60).to_i
     yield(
@@ -121,25 +184,7 @@ module IdentityTijuana
       false
     )
 
-    # Kick off an asynchronous donations update.
-    batch_size = Settings.tijuana.pull_batch_amount
-    # The donations cutoff ensures that donations occurring after the most
-    # recent user timestamp don't get processed. This defers the import of
-    # donations linked to new members that haven't been imported yet. If the
-    # number of users in the batch is less than the batch size, then our
-    # users should now be up-to-date, so we can safely process all available
-    # donations.
-    donations_cutoff = (batch_size && updated_users.count >= batch_size) ? last_updated_at : donations_cutoff_default
-    sync = Sync.create!(
-      external_system: 'tijuana',
-      external_system_params: {
-        pull_job: :fetch_donation_updates,
-        time_to_run: DateTime.now,
-        donations_cutoff: donations_cutoff.strftime('%Y-%m-%d %H:%M:%S.%N')
-      }.to_json,
-      sync_type: Sync::PULL_SYNC_TYPE,
-      )
-    PullExternalSystemsWorker.perform_async(sync.id)
+    updated_users.count < updated_users_all.count
   end
 
   def self.fetch_users_for_dedupe
@@ -158,17 +203,27 @@ module IdentityTijuana
   end
 
   def self.fetch_donation_updates(sync_id)
-    ## Do not run method if another worker is currently processing this method
-    yield 0, {}, {}, true if self.worker_currently_running?(__method__.to_s)
+    begin
+      mutex_acquired = acquire_mutex_lock(__method__.to_s, sync_id)
+      unless mutex_acquired
+        yield 0, {}, {}, true
+        return
+      end
+      need_another_batch = fetch_donation_updates_impl(sync_id) do |records_for_import_count, records_for_import, records_for_import_scope, pull_deferred|
+        yield records_for_import_count, records_for_import, records_for_import_scope, pull_deferred
+      end
+    ensure
+      release_mutex_lock(__method__.to_s) if mutex_acquired
+    end
+    schedule_another_pull_batch(__method__.to_s) if need_another_batch
+  end
 
+  def self.fetch_donation_updates_impl(sync_id)
     started_at = DateTime.now
     last_updated_at = get_redis_date('tijuana:donations:last_updated_at')
-    external_system_params = Sync.find(sync_id).external_system_params
-    donations_cutoff_str = JSON.parse(external_system_params)['donations_cutoff']
-    donations_cutoff = Time.find_zone('UTC').parse(donations_cutoff_str) if donations_cutoff_str.present?
-    donations_cutoff = DateTime.now unless donations_cutoff
-    updated_donations = IdentityTijuana::Donation.updated_donations(last_updated_at, donations_cutoff)
-    updated_donations_all = IdentityTijuana::Donation.updated_donations_all(last_updated_at, donations_cutoff)
+    users_dependent_data_cutoff = get_redis_date('tijuana:users:dependent_data_cutoff')
+    updated_donations = IdentityTijuana::Donation.updated_donations(last_updated_at, users_dependent_data_cutoff)
+    updated_donations_all = IdentityTijuana::Donation.updated_donations_all(last_updated_at, users_dependent_data_cutoff)
     updated_donations.each do |donation|
       IdentityTijuana::Donation.import(donation.id, sync_id)
     end
@@ -193,26 +248,41 @@ module IdentityTijuana
         },
         false
     )
+
+    updated_donations.count < updated_donations_all.count
   end
 
-  def self.fetch_latest_taggings(sync_id)
-    ## Do not run method if another worker is currently processing this method
-    yield 0, {}, {}, true if self.worker_currently_running?(__method__.to_s)
+  def self.fetch_tagging_updates(sync_id)
+    begin
+      mutex_acquired = acquire_mutex_lock(__method__.to_s, sync_id)
+      unless mutex_acquired
+        yield 0, {}, {}, true
+        return
+      end
+      need_another_batch = fetch_tagging_updates_impl(sync_id) do |records_for_import_count, records_for_import, records_for_import_scope, pull_deferred|
+        yield records_for_import_count, records_for_import, records_for_import_scope, pull_deferred
+      end
+    ensure
+      release_mutex_lock(__method__.to_s) if mutex_acquired
+    end
+    schedule_another_pull_batch(__method__.to_s) if need_another_batch
+  end
 
+  def self.fetch_tagging_updates_impl(sync_id)
     latest_tagging_scope_limit = 50000
     started_at = DateTime.now
     last_id = (Sidekiq.redis { |r| r.get 'tijuana:taggings:last_id' } || 0).to_i
-    users_last_updated_at = get_redis_date('tijuana:users:last_updated_at')
+    users_dependent_data_cutoff = get_redis_date('tijuana:users:dependent_data_cutoff')
     connection = ActiveRecord::Base.connection == List.connection ? ActiveRecord::Base.connection : List.connection
 
     tags_remaining_behind_sql = %{
-      SELECT distinct(t.name)
+      SELECT count(*)
       FROM taggings tu #{'FORCE INDEX (PRIMARY)' unless Settings.tijuana.database_url.start_with? 'postgres'}
       JOIN tags t
         ON t.id = tu.tag_id
       WHERE tu.id > #{last_id}
         AND taggable_type = 'User'
-        AND (tu.created_at < #{connection.quote(users_last_updated_at)} OR tu.created_at is null)
+        AND (tu.created_at < #{connection.quote(users_dependent_data_cutoff)} OR tu.created_at is null)
         AND t.name like '%_syncid%'
     }
 
@@ -223,7 +293,7 @@ module IdentityTijuana
         ON t.id = tu.tag_id
       WHERE tu.id > #{last_id}
         AND taggable_type = 'User'
-        AND (tu.created_at < #{connection.quote(users_last_updated_at)} OR tu.created_at is null)
+        AND (tu.created_at < #{connection.quote(users_dependent_data_cutoff)} OR tu.created_at is null)
         AND t.name like '%_syncid%'
       ORDER BY tu.id
       LIMIT #{latest_tagging_scope_limit}
@@ -232,6 +302,7 @@ module IdentityTijuana
     puts 'Getting latest taggings'
     tags_remaining_results = IdentityTijuana::Tagging.connection.execute(tags_remaining_behind_sql).to_a
     results = IdentityTijuana::Tagging.connection.execute(scoped_latest_taggings_sql).to_a
+    tags_remaining_count = tags_remaining_results[0][0]
 
     unless results.empty?
       puts 'Creating value strings'
@@ -241,12 +312,15 @@ module IdentityTijuana
       end
 
       puts 'Inserting value strings and merging'
-      table_name = "tmp_#{SecureRandom.hex(16)}"
+      base_table_name = "tj_tags_sync_#{sync_id}_#{SecureRandom.hex(16)}"
+      table_name = "tmp.#{base_table_name}"
       connection.execute(%{
+        CREATE SCHEMA IF NOT EXISTS tmp;
+        DROP TABLE IF EXISTS #{table_name};
         CREATE TABLE #{table_name} (tijuana_id TEXT, tag TEXT, tijuana_author_id INTEGER);
         INSERT INTO #{table_name} VALUES #{value_strings.join(',')};
-        CREATE INDEX #{table_name}_tijuana_id ON #{table_name} (tijuana_id);
-        CREATE INDEX #{table_name}_tag ON #{table_name} (tag);
+        CREATE INDEX #{base_table_name}_tijuana_id ON #{table_name} (tijuana_id);
+        CREATE INDEX #{base_table_name}_tag ON #{table_name} (tag);
       })
 
       connection.execute(%{
@@ -318,9 +392,11 @@ module IdentityTijuana
         started_at: started_at,
         completed_at: DateTime.now,
         execution_time_seconds: execution_time_seconds,
-        remaining_behind: tags_remaining_results.count
+        remaining_behind: tags_remaining_count
       },
       false
     )
+
+    results.count < tags_remaining_count
   end
 end
