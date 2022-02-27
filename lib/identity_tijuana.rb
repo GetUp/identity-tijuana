@@ -10,15 +10,45 @@ module IdentityTijuana
     [:fetch_tagging_updates, 10.minutes],
   ]
   MEMBER_RECORD_DATA_TYPE='object'
+  MUTEX_EXPIRY_DURATION = 10.minutes
+
+  def self.acquire_mutex_lock(method_name, sync_id)
+    mutex_name = "#{SYSTEM_NAME}:mutex:#{method_name}"
+    new_mutex_expiry = DateTime.now + MUTEX_EXPIRY_DURATION
+    mutex_acquired = set_redis_date(mutex_name, new_mutex_expiry, true)
+    unless mutex_acquired
+      mutex_expiry = get_redis_date(mutex_name)
+      if mutex_expiry.past?
+        unless worker_currently_running?(method_name, sync_id)
+          delete_redis_date(mutex_name)
+          mutex_acquired = set_redis_date(mutex_name, new_mutex_expiry, true)
+        end
+      end
+    end
+    mutex_acquired
+  end
+
+  def self.release_mutex_lock(method_name)
+    mutex_name = "#{SYSTEM_NAME}:mutex:#{method_name}"
+    delete_redis_date(mutex_name)
+  end
 
   def self.get_redis_date(redis_identifier, default_value=Time.at(0))
     date_str = Sidekiq.redis { |r| r.get redis_identifier }
     date_str ? Time.parse(date_str) : default_value
   end
 
-  def self.set_redis_date(redis_identifier, date_time_value)
-    date_str = date_time_value&.strftime('%Y-%m-%d %H:%M:%S.%N') # Ensures fractional seconds are retained
-    Sidekiq.redis { |r| r.set redis_identifier, date_str }
+  def self.set_redis_date(redis_identifier, date_time_value, as_mutex=false)
+    date_str = date_time_value&.strftime('%Y-%m-%d %H:%M:%S.%N %Z') # Ensures fractional seconds are retained
+    if as_mutex
+      Sidekiq.redis { |r| r.setnx redis_identifier, date_str }
+    else
+      Sidekiq.redis { |r| r.set redis_identifier, date_str }
+    end
+  end
+
+  def self.delete_redis_date(redis_identifier)
+    Sidekiq.redis { |r| r.del redis_identifier }
   end
 
   def self.push(sync_id, member_ids, external_system_params)
@@ -58,16 +88,20 @@ module IdentityTijuana
     end
   end
 
-  def self.worker_currently_running?(method_name)
+  def self.worker_currently_running?(method_name, sync_id)
     workers = Sidekiq::Workers.new
     workers.each do |_process_id, _thread_id, work|
-      matched_process = work["payload"]["args"] = [SYSTEM_NAME, method_name]
-      if matched_process
-        puts ">>> #{SYSTEM_NAME.titleize} #{method_name} skipping as worker already running ..."
-        return true
-      end
+      args = work["payload"]["args"]
+      worker_sync_id = (args.count > 0) ? args[0] : nil
+      worker_sync = worker_sync_id ? Sync.find_by(id: worker_sync_id) : nil
+      next unless worker_sync
+      worker_system = worker_sync.external_system
+      worker_method_name = JSON.parse(worker_sync.external_system_params)["pull_job"]
+      already_running = (worker_system == SYSTEM_NAME &&
+        worker_method_name == method_name &&
+        worker_sync_id != sync_id)
+      return true if already_running
     end
-    puts ">>> #{SYSTEM_NAME.titleize} #{method_name} running ..."
     return false
   end
 
@@ -91,9 +125,21 @@ module IdentityTijuana
   end
 
   def self.fetch_user_updates(sync_id)
-    ## Do not run method if another worker is currently processing this method
-    yield 0, {}, {}, true if self.worker_currently_running?(__method__.to_s)
+    begin
+      mutex_acquired = acquire_mutex_lock(__method__.to_s, sync_id)
+      unless mutex_acquired
+        yield 0, {}, {}, true
+        return
+      end
+      fetch_user_updates_impl(sync_id) do |records_for_import_count, records_for_import, records_for_import_scope, pull_deferred|
+        yield records_for_import_count, records_for_import, records_for_import_scope, pull_deferred
+      end
+    ensure
+      release_mutex_lock(__method__.to_s) if mutex_acquired
+    end
+  end
 
+  def self.fetch_user_updates_impl(sync_id)
     started_at = DateTime.now
     last_updated_at = get_redis_date('tijuana:users:last_updated_at')
     users_dependent_data_cutoff = DateTime.now
@@ -145,9 +191,21 @@ module IdentityTijuana
   end
 
   def self.fetch_donation_updates(sync_id)
-    ## Do not run method if another worker is currently processing this method
-    yield 0, {}, {}, true if self.worker_currently_running?(__method__.to_s)
+    begin
+      mutex_acquired = acquire_mutex_lock(__method__.to_s, sync_id)
+      unless mutex_acquired
+        yield 0, {}, {}, true
+        return
+      end
+      fetch_donation_updates_impl(sync_id) do |records_for_import_count, records_for_import, records_for_import_scope, pull_deferred|
+        yield records_for_import_count, records_for_import, records_for_import_scope, pull_deferred
+      end
+    ensure
+      release_mutex_lock(__method__.to_s) if mutex_acquired
+    end
+  end
 
+def self.fetch_donation_updates_impl(sync_id)
     started_at = DateTime.now
     last_updated_at = get_redis_date('tijuana:donations:last_updated_at')
     users_dependent_data_cutoff = get_redis_date('tijuana:users:dependent_data_cutoff')
@@ -180,9 +238,21 @@ module IdentityTijuana
   end
 
   def self.fetch_tagging_updates(sync_id)
-    ## Do not run method if another worker is currently processing this method
-    yield 0, {}, {}, true if self.worker_currently_running?(__method__.to_s)
+    begin
+      mutex_acquired = acquire_mutex_lock(__method__.to_s, sync_id)
+      unless mutex_acquired
+        yield 0, {}, {}, true
+        return
+      end
+      fetch_tagging_updates_impl(sync_id) do |records_for_import_count, records_for_import, records_for_import_scope, pull_deferred|
+        yield records_for_import_count, records_for_import, records_for_import_scope, pull_deferred
+      end
+    ensure
+      release_mutex_lock(__method__.to_s) if mutex_acquired
+    end
+  end
 
+  def self.fetch_tagging_updates_impl(sync_id)
     latest_tagging_scope_limit = 50000
     started_at = DateTime.now
     last_id = (Sidekiq.redis { |r| r.get 'tijuana:taggings:last_id' } || 0).to_i
