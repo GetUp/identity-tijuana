@@ -242,12 +242,15 @@ module IdentityTijuana
       end
 
       puts 'Inserting value strings and merging'
-      table_name = "tmp_#{SecureRandom.hex(16)}"
+      base_table_name = "tj_tags_sync_#{sync_id}_#{SecureRandom.hex(16)}"
+      table_name = "tmp.#{base_table_name}"
       connection.execute(%{
+        CREATE SCHEMA IF NOT EXISTS tmp;
+        DROP TABLE IF EXISTS #{table_name};
         CREATE TABLE #{table_name} (tijuana_id TEXT, tag TEXT, tijuana_author_id INTEGER);
         INSERT INTO #{table_name} VALUES #{value_strings.join(',')};
-        CREATE INDEX #{table_name}_tijuana_id ON #{table_name} (tijuana_id);
-        CREATE INDEX #{table_name}_tag ON #{table_name} (tag);
+        CREATE INDEX #{base_table_name}_tijuana_id ON #{table_name} (tijuana_id);
+        CREATE INDEX #{base_table_name}_tag ON #{table_name} (tag);
       })
 
       connection.execute(%{
