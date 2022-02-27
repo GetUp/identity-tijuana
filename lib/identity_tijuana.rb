@@ -4,7 +4,7 @@ module IdentityTijuana
   SYSTEM_NAME = 'tijuana'
   SYNCING = 'tag'
   CONTACT_TYPE = 'email'
-  PULL_JOBS = [[:fetch_updated_users, 10.minutes], [:fetch_latest_taggings, 5.minutes]]
+  PULL_JOBS = [[:fetch_user_updates, 10.minutes], [:fetch_tagging_updates, 5.minutes]]
   MEMBER_RECORD_DATA_TYPE='object'
 
   def self.get_redis_date(redis_identifier)
@@ -86,7 +86,7 @@ module IdentityTijuana
     end
   end
 
-  def self.fetch_updated_users(sync_id)
+  def self.fetch_user_updates(sync_id)
     ## Do not run method if another worker is currently processing this method
     yield 0, {}, {}, true if self.worker_currently_running?(__method__.to_s)
 
@@ -195,7 +195,7 @@ module IdentityTijuana
     )
   end
 
-  def self.fetch_latest_taggings(sync_id)
+  def self.fetch_tagging_updates(sync_id)
     ## Do not run method if another worker is currently processing this method
     yield 0, {}, {}, true if self.worker_currently_running?(__method__.to_s)
 
