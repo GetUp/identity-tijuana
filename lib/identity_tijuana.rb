@@ -124,6 +124,15 @@ module IdentityTijuana
     end
   end
 
+  def self.schedule_another_pull_batch(pull_job)
+    sync = Sync.create!(
+      external_system: SYSTEM_NAME,
+      external_system_params: { pull_job: pull_job, time_to_run: DateTime.now }.to_json,
+      sync_type: Sync::PULL_SYNC_TYPE
+    )
+    PullExternalSystemsWorker.perform_async(sync.id)
+  end
+
   def self.fetch_user_updates(sync_id)
     begin
       mutex_acquired = acquire_mutex_lock(__method__.to_s, sync_id)
@@ -131,12 +140,13 @@ module IdentityTijuana
         yield 0, {}, {}, true
         return
       end
-      fetch_user_updates_impl(sync_id) do |records_for_import_count, records_for_import, records_for_import_scope, pull_deferred|
+      need_another_batch = fetch_user_updates_impl(sync_id) do |records_for_import_count, records_for_import, records_for_import_scope, pull_deferred|
         yield records_for_import_count, records_for_import, records_for_import_scope, pull_deferred
       end
     ensure
       release_mutex_lock(__method__.to_s) if mutex_acquired
     end
+    schedule_another_pull_batch(__method__.to_s) if need_another_batch
   end
 
   def self.fetch_user_updates_impl(sync_id)
@@ -173,6 +183,8 @@ module IdentityTijuana
       },
       false
     )
+
+    updated_users.count < updated_users_all.count
   end
 
   def self.fetch_users_for_dedupe
@@ -197,20 +209,21 @@ module IdentityTijuana
         yield 0, {}, {}, true
         return
       end
-      fetch_donation_updates_impl(sync_id) do |records_for_import_count, records_for_import, records_for_import_scope, pull_deferred|
+      need_another_batch = fetch_donation_updates_impl(sync_id) do |records_for_import_count, records_for_import, records_for_import_scope, pull_deferred|
         yield records_for_import_count, records_for_import, records_for_import_scope, pull_deferred
       end
     ensure
       release_mutex_lock(__method__.to_s) if mutex_acquired
     end
+    schedule_another_pull_batch(__method__.to_s) if need_another_batch
   end
 
-def self.fetch_donation_updates_impl(sync_id)
+  def self.fetch_donation_updates_impl(sync_id)
     started_at = DateTime.now
     last_updated_at = get_redis_date('tijuana:donations:last_updated_at')
     users_dependent_data_cutoff = get_redis_date('tijuana:users:dependent_data_cutoff')
     updated_donations = IdentityTijuana::Donation.updated_donations(last_updated_at, users_dependent_data_cutoff)
-    updated_donations_all = IdentityTijuana::Donation.updated_donations_all(users_dependent_data_cutoff, users_dependent_data_cutoff)
+    updated_donations_all = IdentityTijuana::Donation.updated_donations_all(last_updated_at, users_dependent_data_cutoff)
     updated_donations.each do |donation|
       IdentityTijuana::Donation.import(donation.id, sync_id)
     end
@@ -235,6 +248,8 @@ def self.fetch_donation_updates_impl(sync_id)
         },
         false
     )
+
+    updated_donations.count < updated_donations_all.count
   end
 
   def self.fetch_tagging_updates(sync_id)
@@ -244,12 +259,13 @@ def self.fetch_donation_updates_impl(sync_id)
         yield 0, {}, {}, true
         return
       end
-      fetch_tagging_updates_impl(sync_id) do |records_for_import_count, records_for_import, records_for_import_scope, pull_deferred|
+      need_another_batch = fetch_tagging_updates_impl(sync_id) do |records_for_import_count, records_for_import, records_for_import_scope, pull_deferred|
         yield records_for_import_count, records_for_import, records_for_import_scope, pull_deferred
       end
     ensure
       release_mutex_lock(__method__.to_s) if mutex_acquired
     end
+    schedule_another_pull_batch(__method__.to_s) if need_another_batch
   end
 
   def self.fetch_tagging_updates_impl(sync_id)
@@ -380,5 +396,7 @@ def self.fetch_donation_updates_impl(sync_id)
       },
       false
     )
+
+    results.count < tags_remaining_count
   end
 end
