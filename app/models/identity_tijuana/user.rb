@@ -136,9 +136,20 @@ module IdentityTijuana
 
     def standardise_phone_number(phone_number)
       begin
-        PhoneNumber.standardise_phone_number(phone_number) if phone_number.present?
+        if phone_number.present?
+          standardised_number = PhoneNumber.standardise_phone_number(phone_number)
+          # Temporary workaround to forestall problems created by ID's current
+          # handling of some bad phone numbers. A call made to Phony.split
+          # during ID's member upsert throws an error in these cases. To avoid
+          # this happening, we catch these cases ourselves before the upsert,
+          # and abandon trying to upsert the affected number.
+          Phony.split(standardised_number)
+          standardised_number
+        else
+          nil
+        end
       rescue => e
-        logger.warn "#{e.class.name} occurred while standardising phone number #{phone_number}"
+        Rails.logger.warn "#{e.class.name} occurred while standardising phone number #{phone_number}"
         nil
       end
     end
