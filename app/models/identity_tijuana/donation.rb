@@ -9,14 +9,14 @@ module IdentityTijuana
     scope :updated_donations, -> (last_updated_at, exclude_from) {
       includes(:transactions)
         .includes(:donation_upgrades)
-        .where('donations.updated_at > ?', last_updated_at)
+        .where('donations.updated_at >= ?', last_updated_at)
         .and(where('donations.updated_at < ?', exclude_from))
         .order('donations.updated_at')
         .limit(Settings.tijuana.pull_batch_amount)
     }
 
     scope :updated_donations_all, -> (last_updated_at, exclude_from) {
-      where('donations.updated_at > ?', last_updated_at)
+      where('donations.updated_at >= ?', last_updated_at)
         .and(where('donations.updated_at < ?', exclude_from))
     }
 
