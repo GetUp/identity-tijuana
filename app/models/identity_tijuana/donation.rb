@@ -50,6 +50,8 @@ module IdentityTijuana
               # payment_method_expires_at: nil,
               # ended_reason: nil,
               # member_action_id: nil,
+              created_at: created_at,
+              updated_at: DateTime.now
             }
             begin
               rd = Donations::RegularDonation.upsert!(regular_donation_hash)
@@ -72,6 +74,8 @@ module IdentityTijuana
               # nonce: nil,
               medium: payment_method,
               refunded_at: refund_transaction ? refund_transaction.created_at : nil,
+              created_at: transaction.created_at,
+              updated_at: DateTime.now,
             }
             donation_hash[:regular_donation_id] = regular_donation_id if regular_donation_id.present?
             begin

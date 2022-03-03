@@ -51,10 +51,9 @@ module IdentityTijuana
         deceased = has_tag('deceased')
         return_to_sender = has_tag('rts')
         update_deceased = update_rts = true
-        member = Member.find_by_external_id(:tijuana, id)
-        if member
-          deceased_custom_field = find_custom_field(member.id, 'deceased')
-          rts_custom_field = find_custom_field(member.id, 'rts')
+        if existing
+          deceased_custom_field = find_custom_field(existing.id, 'deceased')
+          rts_custom_field = find_custom_field(existing.id, 'rts')
           currently_deceased = deceased_custom_field && deceased_custom_field.data == 'true'
           currently_return_to_sender = rts_custom_field && rts_custom_field.data == 'true'
           update_deceased = deceased != currently_deceased
@@ -72,19 +71,19 @@ module IdentityTijuana
         is_living_member = is_member && !deceased
 
         add_subscription_info_if_changed(
-          member,
+          existing,
           Settings.tijuana.email_subscription_id,
           is_living_member,
           member_hash
         )
         add_subscription_info_if_changed(
-          member,
+          existing,
           Settings.tijuana.calling_subscription_id,
           is_living_member && !do_not_call,
           member_hash
         )
         add_subscription_info_if_changed(
-          member,
+          existing,
           Settings.tijuana.sms_subscription_id,
           is_living_member && !do_not_sms,
           member_hash
@@ -98,11 +97,15 @@ module IdentityTijuana
         member_hash[:phones].push(phone: standard_mobile) if standard_mobile.present? and standard_mobile != standard_home
 
         begin
-          UpsertMember.call(
+          member = UpsertMember.call(
             member_hash,
             entry_point: 'tijuana:fetch_updated_users',
             ignore_name_change: false
           )
+          if member.present?
+            member.created_at = created_at  # Preserve TJ creation date
+            member.save
+          end
         rescue Exception => e
           Rails.logger.error "Tijuana member sync id:#{id}, error: #{e.message}"
           raise
