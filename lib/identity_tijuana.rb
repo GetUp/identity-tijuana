@@ -152,16 +152,17 @@ module IdentityTijuana
   def self.fetch_user_updates_impl(sync_id)
     started_at = DateTime.now
     last_updated_at = get_redis_date('tijuana:users:last_updated_at')
+    last_id = (Sidekiq.redis { |r| r.get 'tijuana:users:last_id' } || 0).to_i
     users_dependent_data_cutoff = DateTime.now
-    updated_users = User.updated_users(last_updated_at)
-    updated_users_all = User.updated_users_all(last_updated_at)
+    updated_users = User.updated_users(last_updated_at, last_id)
+    updated_users_all = User.updated_users_all(last_updated_at, last_id)
     updated_users.each do |user|
       User.import(user.id, sync_id)
     end
 
     unless updated_users.empty?
-      last_updated_at = updated_users.last.updated_at
-      set_redis_date('tijuana:users:last_updated_at', last_updated_at)
+      set_redis_date('tijuana:users:last_updated_at', updated_users.last.updated_at)
+      Sidekiq.redis { |r| r.set 'tijuana:users:last_id', updated_users.last.id }
     end
 
     users_dependent_data_cutoff = last_updated_at if updated_users.count < updated_users_all.count
@@ -221,15 +222,17 @@ module IdentityTijuana
   def self.fetch_donation_updates_impl(sync_id)
     started_at = DateTime.now
     last_updated_at = get_redis_date('tijuana:donations:last_updated_at')
+    last_id = (Sidekiq.redis { |r| r.get 'tijuana:donations:last_id' } || 0).to_i
     users_dependent_data_cutoff = get_redis_date('tijuana:users:dependent_data_cutoff')
-    updated_donations = IdentityTijuana::Donation.updated_donations(last_updated_at, users_dependent_data_cutoff)
-    updated_donations_all = IdentityTijuana::Donation.updated_donations_all(last_updated_at, users_dependent_data_cutoff)
+    updated_donations = IdentityTijuana::Donation.updated_donations(last_updated_at, last_id, users_dependent_data_cutoff)
+    updated_donations_all = IdentityTijuana::Donation.updated_donations_all(last_updated_at, last_id, users_dependent_data_cutoff)
     updated_donations.each do |donation|
       IdentityTijuana::Donation.import(donation.id, sync_id)
     end
 
     unless updated_donations.empty?
       set_redis_date('tijuana:donations:last_updated_at', updated_donations.last.updated_at)
+      Sidekiq.redis { |r| r.set 'tijuana:donations:last_id', updated_donations.last.id }
     end
 
     execution_time_seconds = ((DateTime.now - started_at) * 24 * 60 * 60).to_i

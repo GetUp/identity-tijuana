@@ -6,18 +6,18 @@ module IdentityTijuana
     has_many :transactions, -> { order 'transactions.created_at' }
     has_many :donation_upgrades, -> { order 'donation_upgrades.created_at' }
 
-    scope :updated_donations, -> (last_updated_at, exclude_from) {
+    scope :updated_donations, -> (last_updated_at, last_id, exclude_from) {
       includes(:transactions)
         .includes(:donation_upgrades)
-        .where('donations.updated_at >= ?', last_updated_at)
-        .and(where('donations.updated_at < ?', exclude_from))
-        .order('donations.updated_at')
+        .where('updated_at > ? || (updated_at = ? && id > ?)', last_updated_at, last_updated_at, last_id)
+        .and(where('updated_at < ?', exclude_from))
+        .order('updated_at, id')
         .limit(Settings.tijuana.pull_batch_amount)
     }
 
-    scope :updated_donations_all, -> (last_updated_at, exclude_from) {
-      where('donations.updated_at >= ?', last_updated_at)
-        .and(where('donations.updated_at < ?', exclude_from))
+    scope :updated_donations_all, -> (last_updated_at, last_id, exclude_from) {
+      where('updated_at > ? || (updated_at = ? && id > ?)', last_updated_at, last_updated_at, last_id)
+        .and(where('updated_at < ?', exclude_from))
     }
 
     def self.import(donation_id, sync_id)
