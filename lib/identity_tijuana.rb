@@ -163,9 +163,9 @@ module IdentityTijuana
     unless updated_users.empty?
       set_redis_date('tijuana:users:last_updated_at', updated_users.last.updated_at)
       Sidekiq.redis { |r| r.set 'tijuana:users:last_id', updated_users.last.id }
+      users_dependent_data_cutoff = updated_users.last.updated_at if updated_users.count < updated_users_all.count
     end
 
-    users_dependent_data_cutoff = last_updated_at if updated_users.count < updated_users_all.count
     set_redis_date('tijuana:users:dependent_data_cutoff', users_dependent_data_cutoff)
 
     execution_time_seconds = ((DateTime.now - started_at) * 24 * 60 * 60).to_i
