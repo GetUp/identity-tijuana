@@ -61,9 +61,12 @@ module IdentityTijuana
               raise
             end
           end
-          refund_transactions = transactions.map { |t| t.refund_of_id ? [ t.refund_of_id, t ] : nil }.compact.to_h
+          refund_transactions = transactions.map { |t|
+            t.refund_of_id && t.successful ? [ t.refund_of_id, t ] : nil
+          }.compact.to_h
           transactions.each do | transaction |
             next if transaction.refund_of_id
+            next unless transaction.successful
             refund_transaction = refund_transactions[transaction.id]
             donation_hash = {
               # member_action_id: nil,
@@ -79,7 +82,36 @@ module IdentityTijuana
             }
             donation_hash[:regular_donation_id] = regular_donation_id if regular_donation_id.present?
             begin
-              Donations::Donation.upsert!(donation_hash)
+              attempts = 0
+              while true
+                begin
+                  attempts += 1
+                  Donations::Donation.upsert!(donation_hash)
+                  break
+                rescue ActiveRecord::RecordInvalid => e
+                  # Workaround for a problematic index in ID, which requires
+                  # uniqueness for all donations with respect to member_id,
+                  # amount, and created_at. Since the first 2 fields are
+                  # important enough that they can't really be changed, we
+                  # are forced to offset the created_at date by however many
+                  # microseconds are required to make it unique for that member
+                  # and transaction amount.
+                  raise unless e.message =~ /has already been taken/
+                  raise if attempts > 1
+                  tj_connection = TijuanaDonation.connection
+                  preceding_duplicates = tj_connection.execute(%{
+                    SELECT t.id
+                    FROM donations d, transactions t
+                    WHERE d.id = t.donation_id
+                    AND d.user_id = #{user_id}
+                    AND t.amount_in_cents = #{transaction.amount_in_cents}
+                    AND t.created_at = #{tj_connection.quote(transaction.created_at)}
+                    AND t.id < #{transaction.id}
+                  }).to_a
+                  offset_microseconds = preceding_duplicates.count + 1
+                  donation_hash[:created_at] = transaction.created_at + (offset_microseconds / 1000000.0)
+                end
+              end
             rescue Exception => e
               Rails.logger.error "Tijuana transaction sync id:#{transaction.id}, error: #{e.message}"
               raise
