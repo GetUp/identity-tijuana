@@ -61,9 +61,12 @@ module IdentityTijuana
               raise
             end
           end
-          refund_transactions = transactions.map { |t| t.refund_of_id ? [ t.refund_of_id, t ] : nil }.compact.to_h
+          refund_transactions = transactions.map { |t|
+            t.refund_of_id && t.successful ? [ t.refund_of_id, t ] : nil
+          }.compact.to_h
           transactions.each do | transaction |
             next if transaction.refund_of_id
+            next unless transaction.successful
             refund_transaction = refund_transactions[transaction.id]
             donation_hash = {
               # member_action_id: nil,
