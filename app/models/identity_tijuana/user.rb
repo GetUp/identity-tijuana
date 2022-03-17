@@ -89,7 +89,18 @@ module IdentityTijuana
           member_hash
         )
 
-        member_hash[:addresses] = [address_hash] unless return_to_sender
+        same_address = false
+        if existing && existing.address
+          existing_address_hash = {
+            line1: existing.address.line1,
+            town: existing.address.town,
+            country: existing.address.country,
+            state: existing.address.state,
+            postcode: existing.address.postcode
+          }
+          same_address = (address_hash == existing_address_hash)
+        end
+        member_hash[:addresses] = [address_hash] unless same_address || return_to_sender
 
         standard_home = standardise_phone_number(home_number)
         standard_mobile = standardise_phone_number(mobile_number)
