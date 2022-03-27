@@ -39,7 +39,7 @@ module IdentityTijuana
   end
 
   def self.set_redis_date(redis_identifier, date_time_value, as_mutex=false)
-    date_str = date_time_value&.strftime('%Y-%m-%d %H:%M:%S.%N %Z') # Ensures fractional seconds are retained
+    date_str = date_time_value.utc.to_s(:inspect) # Ensures fractional seconds are retained
     if as_mutex
       Sidekiq.redis { |r| r.setnx redis_identifier, date_str }
     else
