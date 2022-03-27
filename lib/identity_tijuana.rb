@@ -4,11 +4,7 @@ module IdentityTijuana
   SYSTEM_NAME = 'tijuana'
   SYNCING = 'tag'
   CONTACT_TYPE = 'email'
-  PULL_JOBS = [
-    [:fetch_user_updates, 10.minutes],
-    [:fetch_donation_updates, 10.minutes],
-    [:fetch_tagging_updates, 10.minutes],
-  ]
+  PULL_JOBS = [[:fetch_user_updates, 10.minutes]]
   MEMBER_RECORD_DATA_TYPE='object'
   MUTEX_EXPIRY_DURATION = 10.minutes
 
@@ -124,7 +120,7 @@ module IdentityTijuana
     end
   end
 
-  def self.schedule_another_pull_batch(pull_job)
+  def self.schedule_pull_batch(pull_job)
     sync = Sync.create!(
       external_system: SYSTEM_NAME,
       external_system_params: { pull_job: pull_job, time_to_run: DateTime.now }.to_json,
@@ -146,7 +142,9 @@ module IdentityTijuana
     ensure
       release_mutex_lock(__method__.to_s) if mutex_acquired
     end
-    schedule_another_pull_batch(__method__.to_s) if need_another_batch
+    schedule_pull_batch(:fetch_user_updates) if need_another_batch
+    schedule_pull_batch(:fetch_tagging_updates)
+    schedule_pull_batch(:fetch_donation_updates)
   end
 
   def self.fetch_user_updates_impl(sync_id)
@@ -216,7 +214,7 @@ module IdentityTijuana
     ensure
       release_mutex_lock(__method__.to_s) if mutex_acquired
     end
-    schedule_another_pull_batch(__method__.to_s) if need_another_batch
+    schedule_pull_batch(:fetch_donation_updates) if need_another_batch
   end
 
   def self.fetch_donation_updates_impl(sync_id)
@@ -268,7 +266,7 @@ module IdentityTijuana
     ensure
       release_mutex_lock(__method__.to_s) if mutex_acquired
     end
-    schedule_another_pull_batch(__method__.to_s) if need_another_batch
+    schedule_pull_batch(:fetch_tagging_updates) if need_another_batch
   end
 
   def self.fetch_tagging_updates_impl(sync_id)
