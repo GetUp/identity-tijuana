@@ -1,4 +1,5 @@
 module IdentityTijuana
+  COMMERCIAL_DATA_IMPORT_KEYS = ['au_2022']
   class User < ApplicationRecord
     include ReadWrite
     self.table_name = 'users'
@@ -28,8 +29,10 @@ module IdentityTijuana
     def import(sync_id)
       existing = Member.find_by_external_id(:tijuana, id)
       if existing.present? && existing.ghosting_started?
-          Rails.logger.warn "Tijuana member (#{id}) is ghosted (#{existing.id}), not updating"
-      else        
+        Rails.logger.warn "Tijuana member (#{id}) is ghosted (#{existing.id}), not updating"
+      elsif existing.present? && existing.member_external_ids.find_by(system: COMMERCIAL_DATA_IMPORT_KEYS)
+        Rails.logger.warn "Tijuana member (#{id}) changes will overwrite commercial data (#{existing.id}), not updating"
+      else
         address_hash = {
           line1: street_address,
           town: suburb,
