@@ -66,9 +66,7 @@ module IdentityTijuana
         ).as_json.to_a.map{|member| member[:email]}
         tijuana = API.new
         tijuana.tag_emails(tag, rows)
-
-        #TODO return write results here
-        yield batch_index, 0
+        yield batch_index, rows.count
       end
     rescue => e
       raise e
