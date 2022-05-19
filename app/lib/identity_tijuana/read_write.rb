@@ -1,7 +1,7 @@
 module IdentityTijuana
-  module ReadWrite
-    def self.included(mod)
-      mod.establish_connection Settings.tijuana.database_url if Settings.tijuana.database_url
-    end
+  class ReadWrite < ApplicationRecord
+    self.abstract_class = true
+    db_url_str = set_db_pool_size(Settings.tijuana.database_url)
+    establish_connection db_url_str if db_url_str
   end
 end

@@ -1,6 +1,5 @@
 module IdentityTijuana
-  class Donation < ApplicationRecord
-    include ReadWrite
+  class Donation < ReadWrite
     self.table_name = 'donations'
     belongs_to :user
     has_many :transactions, -> { order 'transactions.created_at' }
