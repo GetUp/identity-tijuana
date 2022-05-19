@@ -1,6 +1,5 @@
 module IdentityTijuana
-  class User < ApplicationRecord
-    include ReadWrite
+  class User < ReadWrite
     self.table_name = 'users'
     has_many :donations
     has_many :taggings, -> { where(taggable_type: 'User') }, foreign_key: 'taggable_id'

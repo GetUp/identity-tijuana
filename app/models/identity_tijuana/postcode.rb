@@ -1,6 +1,5 @@
 module IdentityTijuana
-  class Postcode < ApplicationRecord
-    include ReadWrite
+  class Postcode < ReadWrite
     self.table_name = 'postcodes'
     has_many :users
   end
