@@ -10,13 +10,13 @@ module IdentityTijuana
       includes(:postcode)
       .includes(:taggings)
       .includes(:tags)
-      .where('updated_at > ? || (updated_at = ? && id > ?)', last_updated_at, last_updated_at, last_id)
+      .where('updated_at > ? or (updated_at = ? and id > ?)', last_updated_at, last_updated_at, last_id)
       .order('updated_at, id')
       .limit(Settings.tijuana.pull_batch_amount)
     }
 
     scope :updated_users_all, -> (last_updated_at, last_id) {
-      where('updated_at > ? || (updated_at = ? && id > ?)',last_updated_at, last_updated_at, last_id)
+      where('updated_at > ? or (updated_at = ? and id > ?)',last_updated_at, last_updated_at, last_id)
     }
 
     def self.import(user_id, sync_id)
