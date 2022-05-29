@@ -8,45 +8,6 @@ module IdentityTijuana
   MEMBER_RECORD_DATA_TYPE='object'
   MUTEX_EXPIRY_DURATION = 10.minutes
 
-  def self.acquire_mutex_lock(method_name, sync_id)
-    mutex_name = "#{SYSTEM_NAME}:mutex:#{method_name}"
-    new_mutex_expiry = DateTime.now + MUTEX_EXPIRY_DURATION
-    mutex_acquired = set_redis_date(mutex_name, new_mutex_expiry, true)
-    unless mutex_acquired
-      mutex_expiry = get_redis_date(mutex_name)
-      if mutex_expiry.past?
-        unless worker_currently_running?(method_name, sync_id)
-          delete_redis_date(mutex_name)
-          mutex_acquired = set_redis_date(mutex_name, new_mutex_expiry, true)
-        end
-      end
-    end
-    mutex_acquired
-  end
-
-  def self.release_mutex_lock(method_name)
-    mutex_name = "#{SYSTEM_NAME}:mutex:#{method_name}"
-    delete_redis_date(mutex_name)
-  end
-
-  def self.get_redis_date(redis_identifier, default_value=Time.at(0))
-    date_str = Sidekiq.redis { |r| r.get redis_identifier }
-    date_str ? Time.parse(date_str) : default_value
-  end
-
-  def self.set_redis_date(redis_identifier, date_time_value, as_mutex=false)
-    date_str = date_time_value.utc.to_s(:inspect) # Ensures fractional seconds are retained
-    if as_mutex
-      Sidekiq.redis { |r| r.setnx redis_identifier, date_str }
-    else
-      Sidekiq.redis { |r| r.set redis_identifier, date_str }
-    end
-  end
-
-  def self.delete_redis_date(redis_identifier)
-    Sidekiq.redis { |r| r.del redis_identifier }
-  end
-
   def self.push(sync_id, member_ids, external_system_params)
     begin
       members = Member.where(id: member_ids).with_email.order(:id)
@@ -84,23 +45,6 @@ module IdentityTijuana
     end
   end
 
-  def self.worker_currently_running?(method_name, sync_id)
-    workers = Sidekiq::Workers.new
-    workers.each do |_process_id, _thread_id, work|
-      args = work["payload"]["args"]
-      worker_sync_id = (args.count > 0) ? args[0] : nil
-      worker_sync = worker_sync_id ? Sync.find_by(id: worker_sync_id) : nil
-      next unless worker_sync
-      worker_system = worker_sync.external_system
-      worker_method_name = JSON.parse(worker_sync.external_system_params)["pull_job"]
-      already_running = (worker_system == SYSTEM_NAME &&
-        worker_method_name == method_name &&
-        worker_sync_id != sync_id)
-      return true if already_running
-    end
-    return false
-  end
-
   def self.get_pull_jobs
     defined?(PULL_JOBS) && PULL_JOBS.is_a?(Array) ? PULL_JOBS : []
   end
@@ -118,15 +62,6 @@ module IdentityTijuana
     rescue => e
       raise e
     end
-  end
-
-  def self.schedule_pull_batch(pull_job)
-    sync = Sync.create!(
-      external_system: SYSTEM_NAME,
-      external_system_params: { pull_job: pull_job, time_to_run: DateTime.now }.to_json,
-      sync_type: Sync::PULL_SYNC_TYPE
-    )
-    PullExternalSystemsWorker.perform_async(sync.id)
   end
 
   def self.fetch_user_updates(sync_id)
@@ -399,5 +334,72 @@ module IdentityTijuana
     )
 
     results.count < tags_remaining_count
+  end
+
+  private
+
+  def self.acquire_mutex_lock(method_name, sync_id)
+    mutex_name = "#{SYSTEM_NAME}:mutex:#{method_name}"
+    new_mutex_expiry = DateTime.now + MUTEX_EXPIRY_DURATION
+    mutex_acquired = set_redis_date(mutex_name, new_mutex_expiry, true)
+    unless mutex_acquired
+      mutex_expiry = get_redis_date(mutex_name)
+      if mutex_expiry.past?
+        unless worker_currently_running?(method_name, sync_id)
+          delete_redis_date(mutex_name)
+          mutex_acquired = set_redis_date(mutex_name, new_mutex_expiry, true)
+        end
+      end
+    end
+    mutex_acquired
+  end
+
+  def self.release_mutex_lock(method_name)
+    mutex_name = "#{SYSTEM_NAME}:mutex:#{method_name}"
+    delete_redis_date(mutex_name)
+  end
+
+  def self.get_redis_date(redis_identifier, default_value=Time.at(0))
+    date_str = Sidekiq.redis { |r| r.get redis_identifier }
+    date_str ? Time.parse(date_str) : default_value
+  end
+
+  def self.set_redis_date(redis_identifier, date_time_value, as_mutex=false)
+    date_str = date_time_value.utc.to_s(:inspect) # Ensures fractional seconds are retained
+    if as_mutex
+      Sidekiq.redis { |r| r.setnx redis_identifier, date_str }
+    else
+      Sidekiq.redis { |r| r.set redis_identifier, date_str }
+    end
+  end
+
+  def self.delete_redis_date(redis_identifier)
+    Sidekiq.redis { |r| r.del redis_identifier }
+  end
+
+  def self.schedule_pull_batch(pull_job)
+    sync = Sync.create!(
+      external_system: SYSTEM_NAME,
+      external_system_params: { pull_job: pull_job, time_to_run: DateTime.now }.to_json,
+      sync_type: Sync::PULL_SYNC_TYPE
+    )
+    PullExternalSystemsWorker.perform_async(sync.id)
+  end
+
+  def self.worker_currently_running?(method_name, sync_id)
+    workers = Sidekiq::Workers.new
+    workers.each do |_process_id, _thread_id, work|
+      args = work["payload"]["args"]
+      worker_sync_id = (args.count > 0) ? args[0] : nil
+      worker_sync = worker_sync_id ? Sync.find_by(id: worker_sync_id) : nil
+      next unless worker_sync
+      worker_system = worker_sync.external_system
+      worker_method_name = JSON.parse(worker_sync.external_system_params)["pull_job"]
+      already_running = (worker_system == SYSTEM_NAME &&
+        worker_method_name == method_name &&
+        worker_sync_id != sync_id)
+      return true if already_running
+    end
+    return false
   end
 end
