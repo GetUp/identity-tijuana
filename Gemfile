@@ -26,4 +26,5 @@ group :development, :test do
   gem 'pry-byebug'
   gem 'spring-commands-rspec'
   gem 'webmock', require: true
+  gem 'audited'
 end

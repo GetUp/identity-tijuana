@@ -89,14 +89,22 @@ module IdentityTijuana
     users_dependent_data_cutoff = DateTime.now
     updated_users = User.updated_users(last_updated_at, last_id)
     updated_users_all = User.updated_users_all(last_updated_at, last_id)
+    unless updated_users.empty?
+      users_dependent_data_cutoff = updated_users.last.updated_at if updated_users.count < updated_users_all.count
+    end
+
     updated_users.each do |user|
-      User.import(user.id, sync_id)
+      MemberSync.import_user(user.id)
+    end
+
+    updated_members = Member.where('updated_at > ? and updated_at <= ?', last_updated_at, users_dependent_data_cutoff)
+    updated_members.each do |member|
+      MemberSync.export_member(member.id)
     end
 
     unless updated_users.empty?
       set_redis_date('tijuana:users:last_updated_at', updated_users.last.updated_at)
       Sidekiq.redis { |r| r.set 'tijuana:users:last_id', updated_users.last.id }
-      users_dependent_data_cutoff = updated_users.last.updated_at if updated_users.count < updated_users_all.count
     end
 
     set_redis_date('tijuana:users:dependent_data_cutoff', users_dependent_data_cutoff)
