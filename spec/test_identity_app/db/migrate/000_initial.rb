@@ -5,6 +5,28 @@ class Initial < ActiveRecord::Migration[4.2]
   enable_extension "btree_gin"
   enable_extension "btree_gist"
   enable_extension "intarray"
+
+  create_table "active_record_audits", id: :serial, force: :cascade do |t|
+    t.integer "auditable_id"
+    t.string "auditable_type"
+    t.integer "associated_id"
+    t.string "associated_type"
+    t.integer "user_id"
+    t.string "user_type"
+    t.string "username"
+    t.string "action"
+    t.json "audited_changes"
+    t.integer "version", default: 0
+    t.text "comment"
+    t.string "remote_address"
+    t.string "request_uuid"
+    t.datetime "created_at", precision: nil
+    t.index ["associated_id", "associated_type"], name: "associated_index"
+    t.index ["auditable_id", "auditable_type"], name: "auditable_index"
+    t.index ["created_at"], name: "index_active_record_audits_on_created_at"
+    t.index ["request_uuid"], name: "index_active_record_audits_on_request_uuid"
+    t.index ["user_id", "user_type"], name: "user_index"
+  end
   
   create_table "contact_campaigns", id: :serial, force: :cascade do |t|
     t.text "name"
