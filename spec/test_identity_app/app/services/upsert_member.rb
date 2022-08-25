@@ -20,6 +20,7 @@ class UpsertMember < IdentityBaseService
       # Don't update further details if upsert data is older than member.updated_at
       return member if !member_created && payload[:updated_at].present? && payload[:updated_at] < member.updated_at
 
+      upsert_emails(payload, member) if payload[:emails].present? && !member_created
       upsert_names(payload, member) if !ignore_name_change || member_created
       upsert_custom_fields(payload[:custom_fields], member) if payload.key?(:custom_fields)
       upsert_phone_numbers(payload[:phones], member) if payload[:phones].present?
@@ -101,6 +102,13 @@ class UpsertMember < IdentityBaseService
         member.add_or_update_custom_field(custom_field_key, custom_field_hash[:value])
       end
     end
+  end
+
+  def upsert_emails(payload, member)
+    # Multiple email addresses aren't currently supported by the data model,
+    # so just upsert the first email address present in the payload.
+    email = Cleanser.cleanse_email(payload.try(:[], :emails).try(:[], 0).try(:[], :email))
+    member.email = email if Cleanser.accept_email?(email)
   end
 
   def upsert_names(payload, member)

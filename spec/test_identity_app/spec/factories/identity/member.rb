@@ -24,5 +24,20 @@ FactoryBot.define do
         create(:landline_number, member: member)
       end
     end
+
+    factory :member_with_address do
+      after(:create) do |member, evaluator|
+        create(:address, member: member)
+      end
+    end
+
+    factory :member_with_the_lot do
+      after(:create) do |member, evaluator|
+        create(:mobile_number, member: member)
+        create(:landline_number, member: member)
+        create(:address, member: member)
+        create(:custom_field, member: member, custom_field_key: FactoryBot.create(:custom_field_key))
+      end
+    end
   end
 end
