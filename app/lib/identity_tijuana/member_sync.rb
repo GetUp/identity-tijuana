@@ -274,11 +274,11 @@ module IdentityTijuana
           member_hash[:addresses] = [address_hash]
         },
         Proc.new {
-          tj_changes[:street_address] = member_address.line1
-          tj_changes[:suburb] = member_address.town
-          tj_changes[:country] = member_address.country
-          tj_changes[:state] = member_address.state
-          tj_changes[:postcode] = member_address.postcode
+          tj_changes[:street_address] = member_address&.line1
+          tj_changes[:suburb] = member_address&.town
+          tj_changes[:country] = member_address&.country
+          tj_changes[:state] = member_address&.state
+          tj_changes[:postcode] = member_address&.postcode
         }
       )
 
