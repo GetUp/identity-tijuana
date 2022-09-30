@@ -213,13 +213,31 @@ module IdentityTijuana
       )
 
       # Compare email address.
+      abort_sync = false
       compare_fields(
         sync_type, [ member&.email ], [ user&.email ],
         Proc.new { get_id_change_date(member, :email, member&.updated_at) },
         Proc.new { user_updated_at },
         Proc.new { member_hash[:emails] = [{email: user.email}] },
-        Proc.new { tj_changes[:email] = member.email }
+        Proc.new {
+          existing_user_with_same_email = User.find_by(email: member.email)
+          if existing_user_with_same_email.present?
+            # We can't update the email in TJ if another user already exists
+            # with that email address. In that scenario, the current user
+            # needs to be unlinked from the member, and we need to ensure
+            # that the other user is linked instead.
+            MemberExternalId.where(
+              member: member,
+              system: 'tijuana',
+              external_id: user.id.to_s
+            ).destroy_all
+            abort_sync = true
+          else
+            tj_changes[:email] = member.email
+          end
+        }
       )
+      return if abort_sync
 
       # Compare mobile number.
       id_mobile = member&.phone_numbers&.mobile&.first
