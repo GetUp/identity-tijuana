@@ -244,7 +244,7 @@ module IdentityTijuana
       puts 'Creating value strings'
       results = results.map { |row| row.try(:values) || row } # deal with results returned in array or hash form
       value_strings = results.map do |row|
-        "(#{connection.quote(row[0])}, #{connection.quote(row[1])}, #{connection.quote(row[2])})"
+        "(#{connection.quote(row[0].to_s)}, #{connection.quote(row[1])}, #{row[3].present? ? row[3] : 'null'})"
       end
 
       puts 'Inserting value strings and merging'
