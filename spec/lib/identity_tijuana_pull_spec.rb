@@ -15,6 +15,13 @@ describe IdentityTijuana do
     Sidekiq::Testing.fake!
   end
 
+  def phone_numbers_are_equivalent(phone1, phone2)
+    # Compare only the last 8 digits to sidestep issues with formatting of the prefix.
+    ph1 = phone1 ? phone1[-8..-1] || phone1 : nil
+    ph2 = phone2 ? phone2[-8..-1] || phone2 : nil
+    ph1 == ph2
+  end
+
   context '#pull' do
     before(:each) do
       clean_external_database
@@ -39,6 +46,7 @@ describe IdentityTijuana do
       allow(Settings).to receive_message_chain("options.allow_subscribe_via_upsert_member") { true }
       allow(Settings).to receive_message_chain("options.default_member_opt_in_subscriptions") { true }
       allow(Settings).to receive_message_chain("options.default_phone_country_code") { '61' }
+      allow(Settings).to receive_message_chain("options.default_mobile_phone_national_destination_code") { '4' }
       allow(Settings).to receive_message_chain("tijuana.email_subscription_id") { @email_sub.id }
       allow(Settings).to receive_message_chain("tijuana.calling_subscription_id") { @calling_sub.id }
       allow(Settings).to receive_message_chain("tijuana.sms_subscription_id") { @sms_sub.id }
@@ -46,62 +54,461 @@ describe IdentityTijuana do
       allow(Settings).to receive_message_chain("tijuana.push_batch_amount") { nil }
     end
 
-    it 'adds members' do
-      user = FactoryBot.create(:tijuana_user)
-      IdentityTijuana.fetch_user_updates(@sync_id) {}
-      expect(Member.find_by(email: user.email)).to have_attributes(name: "#{user.first_name} #{user.last_name}")
-      expect(Member.count).to eq(1)
+    context 'when creating' do
+      it 'creates new members in Identity' do
+        u = FactoryBot.create(:tijuana_user_with_the_lot)
+        IdentityTijuana.fetch_user_updates(@sync_id) {}
+        m = Member.find_by(email: u.email)
+        expect(m).to have_attributes(first_name: u.first_name, last_name: u.last_name)
+        expect(phone_numbers_are_equivalent(m.phone_numbers.mobile.first&.phone, u.mobile_number)).to eq(true)
+        expect(phone_numbers_are_equivalent(m.phone_numbers.landline.first&.phone, u.home_number)).to eq(true)
+        expect(m.address).to have_attributes(line1: u.street_address, town: u.suburb,
+                                             state: u.postcode.state, postcode: u.postcode.number)
+      end
+      it 'creates new users in Tijuana' do
+        m = FactoryBot.create(:member_with_the_lot)
+        IdentityTijuana::Postcode.create(number: m.address.postcode, state: m.address.state)
+        IdentityTijuana.fetch_user_updates(@sync_id) {}
+        u = User.find_by(email: m.email)
+        expect(u).to have_attributes(first_name: m.first_name, last_name: m.last_name)
+        expect(u).to have_attributes(street_address: m.address.line1, suburb: m.address.town)
+        expect(u.postcode.number).to eq(m.address.postcode)
+        expect(u.postcode.state).to eq(m.address.state)
+      end
     end
 
-    it 'upserts members based on email' do
-      user = FactoryBot.create(:tijuana_user)
-      member_with_email = FactoryBot.create(:member)
-      member_with_email.update(email: user.email)
-      expect(Member.count).to eq(1)
-      expect(Member.first).not_to have_attributes(first_name: user.first_name)
-
-      IdentityTijuana.fetch_user_updates(@sync_id) {}
-      expect(Member.find_by(email: user.email)).to have_attributes(name: "#{user.first_name} #{user.last_name}")
-      expect(Member.count).to eq(1)
+    context 'when merging' do
+      context 'names' do
+        it 'merges a missing name to Identity' do
+          u = FactoryBot.create(:tijuana_user)
+          m = FactoryBot.create(:member, email: u.email, first_name: nil, middle_names: nil, last_name: nil)
+          first_name = u.first_name
+          last_name = u.last_name
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(u).to have_attributes(first_name: first_name, last_name: last_name)
+          expect(m).to have_attributes(first_name: first_name, last_name: last_name)
+        end
+        it 'merges a missing name to Tijuana' do
+          m = FactoryBot.create(:member)
+          u = FactoryBot.create(:tijuana_user, email: m.email, first_name: nil, last_name: nil)
+          first_name = m.first_name
+          last_name = m.last_name
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(u).to have_attributes(first_name: first_name, last_name: last_name)
+          expect(m).to have_attributes(first_name: first_name, last_name: last_name)
+        end
+        it 'merges a more complete name to Identity' do
+          u = FactoryBot.create(:tijuana_user)
+          m = FactoryBot.create(:member, email: u.email, first_name: u.first_name, middle_names: nil, last_name: nil)
+          first_name = u.first_name
+          last_name = u.last_name
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(u).to have_attributes(first_name: first_name, last_name: last_name)
+          expect(m).to have_attributes(first_name: first_name, last_name: last_name)
+        end
+        it 'merges a more complete name to Tijuana' do
+          m = FactoryBot.create(:member)
+          u = FactoryBot.create(:tijuana_user, email: m.email, first_name: m.first_name, last_name: nil)
+          first_name = m.first_name
+          last_name = m.last_name
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(u).to have_attributes(first_name: first_name, last_name: last_name)
+          expect(m).to have_attributes(first_name: first_name, last_name: last_name)
+        end
+        it 'merges a conflicting name to Identity if the most recent change was in Tijuana' do
+          m = FactoryBot.create(:member)
+          u = FactoryBot.create(:tijuana_user, email: m.email)
+          first_name = u.first_name
+          last_name = u.last_name
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(u).to have_attributes(first_name: first_name, last_name: last_name)
+          expect(m).to have_attributes(first_name: first_name, last_name: last_name)
+        end
+        it 'merges a conflicting name to Tijuana if the most recent change was in Identity' do
+          u = FactoryBot.create(:tijuana_user)
+          m = FactoryBot.create(:member, email: u.email)
+          first_name = m.first_name
+          last_name = m.last_name
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(u).to have_attributes(first_name: first_name, last_name: last_name)
+          expect(m).to have_attributes(first_name: first_name, last_name: last_name)
+        end
+      end
+      context 'mobile numbers' do
+        it 'merges a missing mobile number to Identity' do
+          u = FactoryBot.create(:tijuana_user_with_mobile_number)
+          m = FactoryBot.create(:member, email: u.email)
+          mobile_number = u.mobile_number
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(u).to have_attributes(mobile_number: mobile_number)
+          expect(phone_numbers_are_equivalent(mobile_number, m.phone_numbers.mobile.first&.phone)).to eq(true)
+        end
+        it 'merges a missing mobile number to Tijuana' do
+          m = FactoryBot.create(:member_with_mobile)
+          u = FactoryBot.create(:tijuana_user, email: m.email)
+          mobile_number = m.phone_numbers.mobile.first&.phone
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(phone_numbers_are_equivalent(mobile_number, u.mobile_number)).to eq(true)
+          expect(m.phone_numbers.mobile.first&.phone).to eq(mobile_number)
+        end
+        it 'merges a conflicting mobile number to Identity if the most recent change was in Tijuana' do
+          m = FactoryBot.create(:member_with_mobile)
+          u = FactoryBot.create(:tijuana_user_with_mobile_number, email: m.email)
+          mobile_number = u.mobile_number
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(u).to have_attributes(mobile_number: mobile_number)
+          expect(phone_numbers_are_equivalent(mobile_number, m.phone_numbers.mobile.first&.phone)).to eq(true)
+        end
+        it 'merges a conflicting mobile number to Tijuana if the most recent change was in Identity' do
+          u = FactoryBot.create(:tijuana_user_with_mobile_number)
+          m = FactoryBot.create(:member_with_mobile, email: u.email)
+          mobile_number = m.phone_numbers.mobile.first&.phone
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(m.phone_numbers.mobile.first&.phone).to eq(mobile_number)
+          expect(u).to have_attributes(mobile_number: mobile_number)
+        end
+      end
+      context 'landline numbers' do
+        it 'merges a missing landline number to Identity' do
+          u = FactoryBot.create(:tijuana_user_with_home_number)
+          m = FactoryBot.create(:member, email: u.email)
+          landline_number = u.home_number
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(u).to have_attributes(home_number: landline_number)
+          expect(phone_numbers_are_equivalent(landline_number, m.phone_numbers.landline.first&.phone)).to eq(true)
+        end
+        it 'merges a missing landline number to Tijuana' do
+          m = FactoryBot.create(:member_with_landline)
+          u = FactoryBot.create(:tijuana_user, email: m.email)
+          landline_number = m.phone_numbers.landline.first&.phone
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(phone_numbers_are_equivalent(landline_number, u.home_number)).to eq(true)
+          expect(m.phone_numbers.landline.first&.phone).to eq(landline_number)
+        end
+        it 'merges a conflicting landline number to Identity if the most recent change was in Tijuana' do
+          m = FactoryBot.create(:member_with_landline)
+          u = FactoryBot.create(:tijuana_user_with_home_number, email: m.email)
+          landline_number = u.home_number
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(u).to have_attributes(home_number: landline_number)
+          expect(phone_numbers_are_equivalent(landline_number, m.phone_numbers.landline.first&.phone)).to eq(true)
+        end
+        it 'merges a conflicting landline number to Tijuana if the most recent change was in Identity' do
+          u = FactoryBot.create(:tijuana_user_with_home_number)
+          m = FactoryBot.create(:member_with_landline, email: u.email)
+          landline_number = m.phone_numbers.landline.first&.phone
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(m.phone_numbers.landline.first&.phone).to eq(landline_number)
+          expect(u).to have_attributes(home_number: landline_number)
+        end
+      end
+      context 'addresses' do
+        it 'merges a missing address to Identity' do
+          u = FactoryBot.create(:tijuana_user_with_address)
+          m = FactoryBot.create(:member, email: u.email)
+          street_address = u.street_address
+          suburb = u.suburb
+          state = u.postcode.state
+          postcode = u.postcode.number
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(u).to have_attributes(street_address: street_address, suburb: suburb)
+          expect(u.postcode&.number).to eq(postcode)
+          expect(u.postcode&.state).to eq(state)
+          expect(m.address).to have_attributes(line1: street_address, town: suburb, state: state, postcode: postcode)
+        end
+        it 'merges a missing address to Tijuana' do
+          m = FactoryBot.create(:member_with_address)
+          u = FactoryBot.create(:tijuana_user, email: m.email)
+          street_address = m.address.line1
+          suburb = m.address.town
+          state = m.address.state
+          postcode = m.address.postcode
+          IdentityTijuana::Postcode.create(number: postcode, state: state)
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(u).to have_attributes(street_address: street_address, suburb: suburb)
+          expect(u.postcode&.number).to eq(postcode)
+          expect(u.postcode&.state).to eq(state)
+          expect(m.address).to have_attributes(line1: street_address, town: suburb, state: state, postcode: postcode)
+        end
+        it 'merges a more complete address to Identity' do
+          u = FactoryBot.create(:tijuana_user_with_address)
+          m = FactoryBot.create(:member, email: u.email)
+          street_address = u.street_address
+          suburb = u.suburb
+          state = u.postcode.state
+          postcode = u.postcode.number
+          FactoryBot.create(:address, member: m, line1: nil, town: nil, state: nil, postcode: postcode)
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(u).to have_attributes(street_address: street_address, suburb: suburb)
+          expect(u.postcode&.number).to eq(postcode)
+          expect(u.postcode&.state).to eq(state)
+          expect(m.address).to have_attributes(line1: street_address, town: suburb, state: state, postcode: postcode)
+        end
+        it 'merges a more complete address to Tijuana' do
+          m = FactoryBot.create(:member_with_address)
+          u = FactoryBot.create(:tijuana_user, email: m.email)
+          street_address = m.address.line1
+          suburb = m.address.town
+          state = m.address.state
+          postcode = m.address.postcode
+          p = IdentityTijuana::Postcode.create(number: postcode, state: state)
+          u.postcode = p
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(u).to have_attributes(street_address: street_address, suburb: suburb)
+          expect(u.postcode&.number).to eq(postcode)
+          expect(u.postcode&.state).to eq(state)
+          expect(m.address).to have_attributes(line1: street_address, town: suburb, state: state, postcode: postcode)
+        end
+        it 'merges a conflicting address to Identity if the most recent change was in Tijuana' do
+          m = FactoryBot.create(:member_with_address)
+          u = FactoryBot.create(:tijuana_user_with_address, email: m.email)
+          street_address = u.street_address
+          suburb = u.suburb
+          state = u.postcode.state
+          postcode = u.postcode.number
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(u).to have_attributes(street_address: street_address, suburb: suburb)
+          expect(u.postcode&.number).to eq(postcode)
+          expect(u.postcode&.state).to eq(state)
+          expect(m.address).to have_attributes(line1: street_address, town: suburb, state: state, postcode: postcode)
+        end
+        it 'merges a conflicting address to Tijuana if the most recent change was in Identity' do
+          u = FactoryBot.create(:tijuana_user_with_address)
+          m = FactoryBot.create(:member_with_address, email: u.email)
+          street_address = m.address.line1
+          suburb = m.address.town
+          state = m.address.state
+          postcode = m.address.postcode
+          IdentityTijuana::Postcode.create(number: postcode, state: state)
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(u).to have_attributes(street_address: street_address, suburb: suburb)
+          expect(u.postcode&.number).to eq(postcode)
+          expect(u.postcode&.state).to eq(state)
+          expect(m.address).to have_attributes(line1: street_address, town: suburb, state: state, postcode: postcode)
+        end
+      end
+      context 'subscriptions' do
+        it 'merges subscriptions to Identity if the most recent change was in Tijuana' do
+          m = FactoryBot.create(:member)
+          u = FactoryBot.create(:tijuana_user, email: m.email, is_member: true, do_not_call: false, do_not_sms: false)
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(u).to have_attributes(is_member: true, do_not_call: false, do_not_sms: false)
+          expect(m.is_subscribed_to?(@email_sub)).to eq(true)
+          expect(m.is_subscribed_to?(@calling_sub)).to eq(true)
+          expect(m.is_subscribed_to?(@sms_sub)).to eq(true)
+        end
+        it 'merges unsubscriptions to Identity if the most recent change was in Tijuana' do
+          m = FactoryBot.create(:member)
+          MemberSubscription.create(subscription: @email_sub, member: m)
+          MemberSubscription.create(subscription: @calling_sub, member: m)
+          MemberSubscription.create(subscription: @sms_sub, member: m)
+          u = FactoryBot.create(:tijuana_user, email: m.email, is_member: false, do_not_call: true, do_not_sms: true)
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(u).to have_attributes(is_member: false, do_not_call: true, do_not_sms: true)
+          expect(m.is_subscribed_to?(@email_sub)).to eq(false)
+          expect(m.is_subscribed_to?(@calling_sub)).to eq(false)
+          expect(m.is_subscribed_to?(@sms_sub)).to eq(false)
+        end
+        it 'merges subscriptions to Tijuana if the most recent change was in Identity' do
+          u = FactoryBot.create(:tijuana_user, is_member: false, do_not_call: true, do_not_sms: true)
+          m = FactoryBot.create(:member, email: u.email)
+          MemberSubscription.create(subscription: @email_sub, member: m)
+          MemberSubscription.create(subscription: @calling_sub, member: m)
+          MemberSubscription.create(subscription: @sms_sub, member: m)
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(u).to have_attributes(is_member: true, do_not_call: false, do_not_sms: false)
+          expect(m.is_subscribed_to?(@email_sub)).to eq(true)
+          expect(m.is_subscribed_to?(@calling_sub)).to eq(true)
+          expect(m.is_subscribed_to?(@sms_sub)).to eq(true)
+        end
+        it 'merges unsubscriptions to Tijuana if the most recent change was in Identity' do
+          u = FactoryBot.create(:tijuana_user, is_member: true, do_not_call: false, do_not_sms: false)
+          m = FactoryBot.create(:member, email: u.email)
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(u).to have_attributes(is_member: false, do_not_call: true, do_not_sms: true)
+          expect(m.is_subscribed_to?(@email_sub)).to eq(false)
+          expect(m.is_subscribed_to?(@calling_sub)).to eq(false)
+          expect(m.is_subscribed_to?(@sms_sub)).to eq(false)
+        end
+        it 'merges to a stable state when subscriptions in Identity cannot be represented in Tijuana' do
+          u = FactoryBot.create(:tijuana_user, is_member: true, do_not_call: false, do_not_sms: false)
+          m = FactoryBot.create(:member, email: u.email)
+          MemberSubscription.create(subscription: @calling_sub, member: m)
+          MemberSubscription.create(subscription: @sms_sub, member: m)
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(u).to have_attributes(is_member: false, do_not_call: false, do_not_sms: false)
+          expect(m.is_subscribed_to?(@email_sub)).to eq(false)
+          expect(m.is_subscribed_to?(@calling_sub)).to eq(false)
+          expect(m.is_subscribed_to?(@sms_sub)).to eq(false)
+          tj_updated_at = u.updated_at
+          id_updated_at = m.updated_at
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(u.updated_at).to eq(tj_updated_at)
+          expect(m.updated_at).to eq(id_updated_at)
+        end
+      end
+      context 'custom field flags' do
+        before do
+          @deceased_custom_field_key = FactoryBot.create(:custom_field_key, name: 'deceased')
+          @rts_custom_field_key = FactoryBot.create(:custom_field_key, name: 'rts')
+          @deceased_tag = FactoryBot.create(:tijuana_tag, name: 'deceased')
+          @rts_tag = FactoryBot.create(:tijuana_tag, name: 'rts')
+        end
+        it 'sets deceased and RTS flags in Identity if the most recent change was in Tijuana' do
+          m = FactoryBot.create(:member)
+          u = FactoryBot.create(:tijuana_user, email: m.email)
+          FactoryBot.create(:tijuana_tagging, taggable_id: u.id, taggable_type: 'User', tag: @deceased_tag)
+          FactoryBot.create(:tijuana_tagging, taggable_id: u.id, taggable_type: 'User', tag: @rts_tag)
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(u.taggings.find_by(tag: @deceased_tag)).not_to eq(nil)
+          expect(u.taggings.find_by(tag: @rts_tag)).not_to eq(nil)
+          expect(m.custom_fields.find_by(custom_field_key: @deceased_custom_field_key)&.data).to eq('true')
+          expect(m.custom_fields.find_by(custom_field_key: @rts_custom_field_key)&.data).to eq('true')
+        end
+        it 'unsets deceased and RTS flags in Identity if the most recent change was in Tijuana' do
+          m = FactoryBot.create(:member)
+          FactoryBot.create(:custom_field, member: m, custom_field_key: @deceased_custom_field_key, data: 'true')
+          FactoryBot.create(:custom_field, member: m, custom_field_key: @rts_custom_field_key, data: 'true')
+          u = FactoryBot.create(:tijuana_user, email: m.email)
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(u.taggings.find_by(tag: @deceased_tag)).to eq(nil)
+          expect(u.taggings.find_by(tag: @rts_tag)).to eq(nil)
+          expect(m.custom_fields.find_by(custom_field_key: @deceased_custom_field_key)&.data).to eq('false')
+          expect(m.custom_fields.find_by(custom_field_key: @rts_custom_field_key)&.data).to eq('false')
+        end
+        it 'sets deceased and RTS tags in Tijuana if the most recent change was in Identity' do
+          u = FactoryBot.create(:tijuana_user)
+          m = FactoryBot.create(:member, email: u.email)
+          FactoryBot.create(:custom_field, member: m, custom_field_key: @deceased_custom_field_key, data: 'true')
+          FactoryBot.create(:custom_field, member: m, custom_field_key: @rts_custom_field_key, data: 'true')
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(u.taggings.find_by(tag: @deceased_tag)).not_to eq(nil)
+          expect(u.taggings.find_by(tag: @rts_tag)).not_to eq(nil)
+          expect(m.custom_fields.find_by(custom_field_key: @deceased_custom_field_key)&.data).to eq('true')
+          expect(m.custom_fields.find_by(custom_field_key: @rts_custom_field_key)&.data).to eq('true')
+        end
+        it 'unsets deceased and RTS tags in Tijuana if the most recent change was in Identity' do
+          u = FactoryBot.create(:tijuana_user)
+          FactoryBot.create(:tijuana_tagging, taggable_id: u.id, taggable_type: 'User', tag: @deceased_tag)
+          FactoryBot.create(:tijuana_tagging, taggable_id: u.id, taggable_type: 'User', tag: @rts_tag)
+          m = FactoryBot.create(:member, email: u.email)
+          FactoryBot.create(:custom_field, member: m, custom_field_key: @deceased_custom_field_key, data: 'false')
+          FactoryBot.create(:custom_field, member: m, custom_field_key: @rts_custom_field_key, data: 'false')
+          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          u.reload
+          m.reload
+          expect(u.taggings.find_by(tag: @deceased_tag)).to eq(nil)
+          expect(u.taggings.find_by(tag: @rts_tag)).to eq(nil)
+          expect(m.custom_fields.find_by(custom_field_key: @deceased_custom_field_key)&.data).to eq('false')
+          expect(m.custom_fields.find_by(custom_field_key: @rts_custom_field_key)&.data).to eq('false')
+        end
+      end
     end
 
-    it 'subscribes people to email and calling and sms' do
-      user = FactoryBot.create(:tijuana_user, is_member: true, do_not_call: false, do_not_sms: false)
-      member_with_email_and_calling = FactoryBot.create(:member)
-      member_with_email_and_calling.update(email: user.email)
-
-
-      IdentityTijuana.fetch_user_updates(@sync_id) {}
-      member_with_email_and_calling.reload
-      expect(member_with_email_and_calling.is_subscribed_to?(@email_sub)).to eq(true)
-      expect(member_with_email_and_calling.is_subscribed_to?(@calling_sub)).to eq(true)
-      expect(member_with_email_and_calling.is_subscribed_to?(@sms_sub)).to eq(true)
-    end
-
-    it 'unsubscribes non-members from all subscriptions' do
-      user = FactoryBot.create(:tijuana_user, is_member: false, do_not_call: false, do_not_sms: false)
-      member_with_email_and_calling = FactoryBot.create(:member)
-      member_with_email_and_calling.update(email: user.email)
-
-      IdentityTijuana.fetch_user_updates(@sync_id) {}
-
-      member_with_email_and_calling.reload
-      expect(member_with_email_and_calling.is_subscribed_to?(@email_sub)).to eq(false)
-      expect(member_with_email_and_calling.is_subscribed_to?(@calling_sub)).to eq(false)
-      expect(member_with_email_and_calling.is_subscribed_to?(@sms_sub)).to eq(false)
-    end
-
-    it 'unsubscribes members from sms and calling' do
-      user = FactoryBot.create(:tijuana_user, is_member: true, do_not_call: true, do_not_sms: true)
-      member_with_email_and_calling = FactoryBot.create(:member)
-      member_with_email_and_calling.update(email: user.email)
-
-      IdentityTijuana.fetch_user_updates(@sync_id) {}
-
-      member_with_email_and_calling.reload
-      expect(member_with_email_and_calling.is_subscribed_to?(@email_sub)).to eq(true)
-      expect(member_with_email_and_calling.is_subscribed_to?(@calling_sub)).to eq(false)
-      expect(member_with_email_and_calling.is_subscribed_to?(@sms_sub)).to eq(false)
+    context 'when updating' do
+      it 'updates members in Identity with changes in Tijuana' do
+        u = FactoryBot.create(:tijuana_user_with_the_lot)
+        IdentityTijuana.fetch_user_updates(@sync_id) {}
+        m = Member.find_by(email: u.email)
+        u.first_name = Faker::Name.first_name
+        u.last_name = Faker::Name.last_name
+        u.email = Faker::Internet.email
+        u.home_number = "612#{::Kernel.rand(10_000_000..99_999_999)}"
+        u.mobile_number = "614#{::Kernel.rand(10_000_000..99_999_999)}"
+        u.street_address = Faker::Address.street_address
+        u.suburb = Faker::Address.city
+        u.postcode =IdentityTijuana::Postcode.new(number: Faker::Address.zip_code, state: Faker::Address.state_abbr)
+        u.save
+        IdentityTijuana.fetch_user_updates(@sync_id) {}
+        u.reload
+        m.reload
+        expect(m).to have_attributes(first_name: u.first_name, last_name: u.last_name, email: u.email)
+        expect(phone_numbers_are_equivalent(m.phone_numbers.mobile.first&.phone, u.mobile_number)).to eq(true)
+        expect(phone_numbers_are_equivalent(m.phone_numbers.landline.first&.phone, u.home_number)).to eq(true)
+        expect(m.address).to have_attributes(line1: u.street_address, town: u.suburb,
+                                             state: u.postcode.state, postcode: u.postcode.number)
+      end
+      it 'updates users in Tijuana with changes in Identity' do
+        m = FactoryBot.create(:member_with_the_lot)
+        IdentityTijuana::Postcode.create(number: m.address.postcode, state: m.address.state)
+        IdentityTijuana.fetch_user_updates(@sync_id) {}
+        u = User.find_by(email: m.email)
+        m.first_name = Faker::Name.first_name
+        m.last_name = Faker::Name.last_name
+        m.email = Faker::Internet.email
+        m.save
+        FactoryBot.create(:mobile_number, member: m)
+        FactoryBot.create(:landline_number, member: m)
+        addr = FactoryBot.create(:address, member: m)
+        IdentityTijuana::Postcode.create(number: addr.postcode, state: addr.state)
+        IdentityTijuana.fetch_user_updates(@sync_id) {}
+        u.reload
+        m.reload
+        expect(u).to have_attributes(email: m.email, first_name: m.first_name, last_name: m.last_name)
+        expect(u).to have_attributes(street_address: m.address.line1, suburb: m.address.town)
+        expect(u).to have_attributes(mobile_number: m.phone_numbers.mobile.first&.phone)
+        expect(u).to have_attributes(home_number: m.phone_numbers.landline.first&.phone)
+        expect(u.postcode.number).to eq(m.address.postcode)
+        expect(u.postcode.state).to eq(m.address.state)
+      end
     end
 
     it 'does not upsert members based on phone' do
@@ -110,35 +517,16 @@ describe IdentityTijuana do
       name = member.name
       member.update_phone_number('61427700300')
 
-      user = FactoryBot.create(:tijuana_user, mobile_number: '41427700300', email: '')
+      FactoryBot.create(:tijuana_user, mobile_number: '41427700300', email: '')
 
       IdentityTijuana.fetch_user_updates(@sync_id) {}
 
       expect(Member.find_by_phone('61427700300')).to have_attributes(name: name)
       expect(Member.count).to eq(2)
     end
-
-    it 'correctly adds phone numbers' do
-      allow(Settings).to receive_message_chain(:options, :default_mobile_phone_national_destination_code).and_return(4)
-      FactoryBot.create(:tijuana_user, first_name: 'Phone', last_name: 'McPhone', email: 'phone@example.com', mobile_number: '0427700300', home_number: '(02) 8188 2888')
-
-      IdentityTijuana.fetch_user_updates(@sync_id) {}
-      expect(Member.count).to eq(1)
-      expect(Member.first.phone_numbers.count).to eq(2)
-      expect(Member.first.phone_numbers.find_by(phone: '61427700300')).not_to be_nil
-      expect(Member.first.phone_numbers.find_by(phone: '61281882888')).not_to be_nil
-    end
-
-    it 'correctly adds addresses' do
-      FactoryBot.create(:tijuana_user, first_name: 'Address', last_name: 'McAdd', email: 'address@example.com', street_address: '18 Mitchell Street', suburb: 'Bondi', postcode: IdentityTijuana::Postcode.new(number: 2026, state: 'NSW'))
-
-      IdentityTijuana.fetch_user_updates(@sync_id) {}
-      expect(Member.first).to have_attributes(first_name: 'Address', last_name: 'McAdd', email: 'address@example.com')
-      expect(Member.first.address).to have_attributes(line1: '18 Mitchell Street', town: 'Bondi', postcode: '2026', state: 'NSW')
-    end
   end
 
-  context '#fetch_tagging_updates' do
+   context '#fetch_tagging_updates' do
     before do
       reef_user = FactoryBot.create(:tijuana_user)
       econoreef_user = FactoryBot.create(:tijuana_user)
