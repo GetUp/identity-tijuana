@@ -41,13 +41,13 @@ describe IdentityTijuana do
     end
 
     context 'with valid parameters' do
-      it 'yeilds correct batch_index' do
+      it 'yields correct batch_index' do
         IdentityTijuana.push_in_batches(1, @members, @external_system_params) do |batch_index, write_result_count|
           expect(batch_index).to eq(0)
         end
       end
       #TODO update with write results
-      it 'yeilds write_result_count' do
+      it 'yields write_result_count' do
         IdentityTijuana.push_in_batches(1, @members, @external_system_params) do |batch_index, write_result_count|
           expect(write_result_count).to eq(0)
         end

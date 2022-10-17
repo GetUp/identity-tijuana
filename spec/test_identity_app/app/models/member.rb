@@ -1,10 +1,16 @@
 class Member < ApplicationRecord
   include ReadWriteIdentity
+  audited
+  has_associated_audits
   attr_accessor :audit_data
+  attr_accessor :associated_audit_data
 
   has_and_belongs_to_many :areas, join_table: :area_memberships
   has_many :addresses
   has_many :custom_fields
+  has_many :custom_field_keys, through: :custom_fields
+  has_many :donations, class_name: 'Donations::Donation'
+  has_many :regular_donations, class_name: 'Donations::RegularDonation'
   has_many :phone_numbers
   has_many :list_members
   has_many :member_subscriptions, dependent: :destroy
@@ -137,6 +143,10 @@ class Member < ApplicationRecord
     else
       return false
     end
+  end
+
+  def ghosting_started?
+    false
   end
 
   def self.upsert_member(hash, entry_point = '', audit_data = {}, ignore_name_change = false, strict_member_id_match = false)
@@ -365,6 +375,13 @@ class Member < ApplicationRecord
       Rails.logger.error "Can't create member_external_id for member #{id} - would create a duplicate: #{system} #{external_id}"
       raise
     end
+  end
+
+  def add_or_update_custom_field(custom_field_key, data)
+    custom_field = CustomField.find_or_create_by!(
+      member_id: id, custom_field_key: custom_field_key
+    )
+    custom_field.update!(data: data)
   end
 
   def unsubscribe_from(subscription, reason = nil, unsubscribe_time = DateTime.now, unsub_mailing_id = nil, audit_data = nil)
