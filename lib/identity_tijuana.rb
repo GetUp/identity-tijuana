@@ -97,9 +97,37 @@ module IdentityTijuana
       MemberSync.import_user(user.id)
     end
 
-    updated_members = Member.where('updated_at > ? and updated_at <= ?', last_updated_at, users_dependent_data_cutoff)
-    updated_members.each do |member|
-      MemberSync.export_member(member.id)
+    updated_member_ids = Member.connection.execute(<<~SQL
+        SELECT id as member_id
+        FROM members
+        WHERE updated_at > '#{last_updated_at}'
+        AND updated_at <= '#{users_dependent_data_cutoff}'
+        UNION
+        SELECT DISTINCT member_id
+        FROM addresses
+        WHERE updated_at > '#{last_updated_at}'
+        AND updated_at <= '#{users_dependent_data_cutoff}'
+        UNION
+        SELECT distinct member_id
+        FROM custom_fields
+        WHERE updated_at > '#{last_updated_at}'
+        AND updated_at <= '#{users_dependent_data_cutoff}'
+        UNION
+        SELECT DISTINCT member_id
+        FROM member_subscriptions
+        WHERE updated_at > '#{last_updated_at}'
+        AND updated_at <= '#{users_dependent_data_cutoff}'
+        UNION
+        SELECT DISTINCT member_id
+        FROM phone_numbers
+        WHERE updated_at > '#{last_updated_at}'
+        AND updated_at <= '#{users_dependent_data_cutoff}'
+        ORDER BY member_id;
+      SQL
+    ).map {|member_id_row| member_id_row['member_id']}
+
+    updated_member_ids.each do |member_id|
+      MemberSync.export_member(member_id)
     end
 
     unless updated_users.empty?
