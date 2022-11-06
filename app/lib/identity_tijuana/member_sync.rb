@@ -410,6 +410,8 @@ module IdentityTijuana
       unless member_hash.empty?
         begin
           fields_updated = member_hash.keys.dup
+          member_hash[:firstname] = member&.first_name unless member_hash.key?(:firstname) # Required param
+          member_hash[:lastname] = member&.last_name unless member_hash.key?(:lastname) # Required param
           member_hash[:external_ids] = { tijuana: user&.id } # Needed for lookup
           member_hash[:emails] = [{email: user&.email}] if sync_type == :merge # Needed for lookup
           member_hash[:ignore_phone_number_match] = true # Don't match by phone number, too error-prone
@@ -439,6 +441,10 @@ module IdentityTijuana
       unless tj_changes.empty?
         user_created = false
         if user.blank?
+          if tj_changes[:email].blank?
+            Rails.logger.warn("Member #{member&.id} has no email address and cannot be synchronized to TJ")
+            return
+          end
           user = User.new
           user.created_at = member&.created_at  # Preserve ID creation date
           user_created = true
@@ -446,6 +452,13 @@ module IdentityTijuana
         fields_updated = tj_changes.keys.dup
         tj_changes.each do |key, value|
           case key
+          when :email
+            if value.blank?
+              Rails.logger.warn("Member #{member&.id}, cannot erase the email address of an existing TJ user")
+              next
+            else
+              user.write_attribute(key, value)
+            end
           when :postcode
             user.postcode = Postcode.find_by(number: value)
           when :state
