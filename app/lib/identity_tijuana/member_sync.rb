@@ -74,6 +74,7 @@ module IdentityTijuana
       # Pull parameters to drive the audit log search.
       audit_list_name, auditable_type, audit_field_names = AUDIT_SEARCH_PARAMS[field_info_type]
       # Check whether we have an ancillary matching field.
+      ancillary_match_value = nil
       case auditable_type
       when 'CustomField'
         # For custom fields, need to make sure that changes relate to the
@@ -99,22 +100,24 @@ module IdentityTijuana
       # until we find a change to the field or fields in question.
       member.send(audit_list_name).where(auditable_type: auditable_type).reverse_each do |audit|
         # Check ancillary matching field, where required.
-        case auditable_type
-        when 'CustomField'
-          audit_custom_field_key_id =
-            audit.audited_changes['custom_field_key_id'] ||
-              CustomField.find(audit.auditable_id)&.custom_field_key_id
-          next unless audit_custom_field_key_id == ancillary_match_value
-        when 'PhoneNumber'
-          phone_number_type =
-            audit.audited_changes['phone_type'] ||
-              PhoneNumber.find(audit.auditable_id)&.phone_type
-          next unless phone_number_type == ancillary_match_value
-        when 'MemberSubscription'
-          audit_subscription_id =
-            audit.audited_changes['subscription_id'] ||
-              MemberSubscription.find(audit.auditable_id)&.subscription_id
-          next unless audit_subscription_id == ancillary_match_value
+        if !ancillary_match_value.nil?
+          case auditable_type
+          when 'CustomField'
+            audit_custom_field_key_id =
+              audit.audited_changes['custom_field_key_id'] ||
+                CustomField.find_by(id: audit.auditable_id).try(:custom_field_key_id)
+            next unless audit_custom_field_key_id == ancillary_match_value
+          when 'PhoneNumber'
+            phone_number_type =
+              audit.audited_changes['phone_type'] ||
+                PhoneNumber.find_by(id: audit.auditable_id).try(:phone_type)
+            next unless phone_number_type == ancillary_match_value
+          when 'MemberSubscription'
+            audit_subscription_id =
+              audit.audited_changes['subscription_id'] ||
+                MemberSubscription.find_by(id: audit.auditable_id).try(:subscription_id)
+            next unless audit_subscription_id == ancillary_match_value
+          end
         end
         # Search for changes to *any* of the fields in the associated list. For
         # example, a change to either the first name or the last name is
