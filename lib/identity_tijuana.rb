@@ -56,33 +56,20 @@ module IdentityTijuana
   def self.pull(sync_id, external_system_params)
     begin
       pull_job = JSON.parse(external_system_params)['pull_job'].to_s
-      self.send(pull_job, sync_id) do |records_for_import_count, records_for_import, records_for_import_scope, pull_deferred|
-        yield records_for_import_count, records_for_import, records_for_import_scope, pull_deferred
-      end
-    rescue => e
-      raise e
-    end
-  end
-
-  def self.fetch_user_updates(sync_id)
-    begin
-      mutex_acquired = acquire_mutex_lock(__method__.to_s, sync_id)
+      mutex_acquired = acquire_mutex_lock(pull_job, sync_id)
       unless mutex_acquired
         yield 0, {}, {}, true
         return
       end
-      need_another_batch = fetch_user_updates_impl(sync_id) do |records_for_import_count, records_for_import, records_for_import_scope, pull_deferred|
+      self.send(pull_job, sync_id) do |records_for_import_count, records_for_import, records_for_import_scope, pull_deferred|
         yield records_for_import_count, records_for_import, records_for_import_scope, pull_deferred
       end
     ensure
-      release_mutex_lock(__method__.to_s) if mutex_acquired
+      release_mutex_lock(pull_job) if mutex_acquired  # Check to make sure that mutex lock is always released.
     end
-    schedule_pull_batch(:fetch_user_updates) if need_another_batch
-    schedule_pull_batch(:fetch_tagging_updates)
-    schedule_pull_batch(:fetch_donation_updates)
   end
 
-  def self.fetch_user_updates_impl(sync_id)
+  def self.fetch_user_updates(sync_id)
     started_at = DateTime.now
     last_updated_at = get_redis_date('tijuana:users:last_updated_at')
     last_id = (Sidekiq.redis { |r| r.get 'tijuana:users:last_id' } || 0).to_i
@@ -154,7 +141,11 @@ module IdentityTijuana
       false
     )
 
-    updated_users.count < updated_users_all.count
+    release_mutex_lock(:fetch_user_updates)
+    need_another_batch = updated_users.count < updated_users_all.count
+    schedule_pull_batch(:fetch_user_updates) if need_another_batch
+    schedule_pull_batch(:fetch_tagging_updates)
+    schedule_pull_batch(:fetch_donation_updates)
   end
 
   def self.fetch_users_for_dedupe
@@ -173,22 +164,6 @@ module IdentityTijuana
   end
 
   def self.fetch_donation_updates(sync_id)
-    begin
-      mutex_acquired = acquire_mutex_lock(__method__.to_s, sync_id)
-      unless mutex_acquired
-        yield 0, {}, {}, true
-        return
-      end
-      need_another_batch = fetch_donation_updates_impl(sync_id) do |records_for_import_count, records_for_import, records_for_import_scope, pull_deferred|
-        yield records_for_import_count, records_for_import, records_for_import_scope, pull_deferred
-      end
-    ensure
-      release_mutex_lock(__method__.to_s) if mutex_acquired
-    end
-    schedule_pull_batch(:fetch_donation_updates) if need_another_batch
-  end
-
-  def self.fetch_donation_updates_impl(sync_id)
     started_at = DateTime.now
     last_updated_at = get_redis_date('tijuana:donations:last_updated_at')
     last_id = (Sidekiq.redis { |r| r.get 'tijuana:donations:last_id' } || 0).to_i
@@ -221,26 +196,12 @@ module IdentityTijuana
         false
     )
 
-    updated_donations.count < updated_donations_all.count
+    release_mutex_lock(:fetch_donation_updates)
+    need_another_batch = updated_donations.count < updated_donations_all.count
+    schedule_pull_batch(:fetch_donation_updates) if need_another_batch
   end
 
   def self.fetch_tagging_updates(sync_id)
-    begin
-      mutex_acquired = acquire_mutex_lock(__method__.to_s, sync_id)
-      unless mutex_acquired
-        yield 0, {}, {}, true
-        return
-      end
-      need_another_batch = fetch_tagging_updates_impl(sync_id) do |records_for_import_count, records_for_import, records_for_import_scope, pull_deferred|
-        yield records_for_import_count, records_for_import, records_for_import_scope, pull_deferred
-      end
-    ensure
-      release_mutex_lock(__method__.to_s) if mutex_acquired
-    end
-    schedule_pull_batch(:fetch_tagging_updates) if need_another_batch
-  end
-
-  def self.fetch_tagging_updates_impl(sync_id)
     latest_tagging_scope_limit = 50000
     started_at = DateTime.now
     last_id = (Sidekiq.redis { |r| r.get 'tijuana:taggings:last_id' } || 0).to_i
@@ -369,7 +330,9 @@ module IdentityTijuana
       false
     )
 
-    results.count < tags_remaining_count
+    release_mutex_lock(:fetch_tagging_updates)
+    need_another_batch = results.count < tags_remaining_count
+    schedule_pull_batch(:fetch_tagging_updates) if need_another_batch
   end
 
   private
