@@ -324,7 +324,10 @@ module IdentityTijuana
             action: tj_email_subbed ? 'subscribe' : 'unsubscribe'
           })
         },
-        Proc.new { tj_changes[:is_member] = id_email_subbed }
+        Proc.new {
+          tj_changes[:is_member] = id_email_subbed
+          tj_changes[:reason] = id_email_subbed ? id_email_sub&.unsubscribe_reason : id_email_sub&.subscribe_reason
+        }
       )
 
       # Compare subscription to SMS.
@@ -477,6 +480,23 @@ module IdentityTijuana
             else
               user.taggings.where(tag: tag).destroy_all
             end
+          when :is_member
+            user.write_attribute(:is_member, value)
+            msg = "#{value ? 'Subscribed' : 'Unsubscribed'} via update from Identity."
+            uae = IdentityTijuana::UserActivityEvent.create(
+              :activity => value ? :subscribed : :unsubscribed,
+              :user => user,
+              :public_stream_html => msg,
+            )
+            unless value
+              IdentityTijuana::Unsubscribe.create(
+                :user => user,
+                :specifics => tj_changes[:reason] || msg,
+                :created_at => uae.created_at
+              )
+            end
+          when :reason
+            fields_updated.delete(key)
           else
             user.write_attribute(key, value)
           end
