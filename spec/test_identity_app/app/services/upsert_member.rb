@@ -9,18 +9,18 @@ class UpsertMember < IdentityBaseService
   def call
     ApplicationRecord.transaction do
       # fail if there's no data
-      return if payload.blank?
+      next if payload.blank?
 
       member, member_created = find_or_create_member(payload)
 
-      return if member.blank?
+      next if member.blank?
 
       upsert_external_ids(payload[:external_ids], member) if payload.key?(:external_ids)
 
       # Don't update further details if upsert data is older than member.updated_at
-      return member if !member_created && payload[:updated_at].present? && payload[:updated_at] < member.updated_at
+      next member if !member_created && payload[:updated_at].present? && payload[:updated_at] < member.updated_at
 
-      upsert_emails(payload, member) if payload[:emails].present? && !member_created
+      upsert_emails(payload, member) if payload[:apply_email_address_changes] && payload.key?(:emails) && !member_created
       upsert_names(payload, member) if !ignore_name_change || member_created
       upsert_custom_fields(payload[:custom_fields], member) if payload.key?(:custom_fields)
       upsert_phone_numbers(payload[:phones], member) if payload[:phones].present?
@@ -151,12 +151,13 @@ class UpsertMember < IdentityBaseService
     subscriptions.each do |s|
       subscription = Subscription.find_by(id: s[:id]) || Subscription.find_by(slug: s[:slug])
 
-      next if subscription.blank? && !Settings.options.allow_upsert_create_subscriptions
-
-      if s[:create].eql?(true)
-        subscription ||= Subscription.create!(name: s[:name], slug: s[:slug])
-      else
-        Rails.logger.error "Subscription not found #{s[:slug]}"
+      if subscription.blank?
+        if Settings.options.allow_upsert_create_subscriptions && s[:create].eql?(true)
+          subscription = Subscription.create!(name: s[:name], slug: s[:slug])
+        else
+          Rails.logger.error "Subscription not found #{s[:slug]}"
+          next
+        end
       end
 
       case s[:action]
