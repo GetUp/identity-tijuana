@@ -468,46 +468,57 @@ describe IdentityTijuana do
         u = FactoryBot.create(:tijuana_user_with_the_lot)
         IdentityTijuana.fetch_user_updates(@sync_id) {}
         m = Member.find_by(email: u.email)
-        u.first_name = Faker::Name.first_name
-        u.last_name = Faker::Name.last_name
-        u.email = Faker::Internet.email
-        u.home_number = "612#{::Kernel.rand(10_000_000..99_999_999)}"
-        u.mobile_number = "614#{::Kernel.rand(10_000_000..99_999_999)}"
-        u.street_address = Faker::Address.street_address
-        u.suburb = Faker::Address.city
-        u.postcode =IdentityTijuana::Postcode.new(number: Faker::Address.zip_code, state: Faker::Address.state_abbr)
+        new_first_name = Faker::Name.first_name
+        new_last_name = Faker::Name.last_name
+        new_email = Faker::Internet.email
+        new_home_number = "612#{::Kernel.rand(10_000_000..99_999_999)}"
+        new_mobile_number = "614#{::Kernel.rand(10_000_000..99_999_999)}"
+        new_street_address = Faker::Address.street_address
+        new_suburb = Faker::Address.city
+        new_postcode = IdentityTijuana::Postcode.new(number: Faker::Address.zip_code, state: Faker::Address.state_abbr)
+        u.first_name = new_first_name
+        u.last_name = new_last_name
+        u.email = new_email
+        u.home_number = new_home_number
+        u.mobile_number = new_mobile_number
+        u.street_address = new_street_address
+        u.suburb = new_suburb
+        u.postcode = new_postcode
         u.save
         IdentityTijuana.fetch_user_updates(@sync_id) {}
         u.reload
         m.reload
-        expect(m).to have_attributes(first_name: u.first_name, last_name: u.last_name, email: u.email)
-        expect(phone_numbers_are_equivalent(m.phone_numbers.mobile.first&.phone, u.mobile_number)).to eq(true)
-        expect(phone_numbers_are_equivalent(m.phone_numbers.landline.first&.phone, u.home_number)).to eq(true)
-        expect(m.address).to have_attributes(line1: u.street_address, town: u.suburb,
-                                             state: u.postcode.state, postcode: u.postcode.number)
+        expect(m).to have_attributes(first_name: new_first_name, last_name: new_last_name, email: new_email)
+        expect(phone_numbers_are_equivalent(m.phone_numbers.mobile.first&.phone, new_mobile_number)).to eq(true)
+        expect(phone_numbers_are_equivalent(m.phone_numbers.landline.first&.phone, new_home_number)).to eq(true)
+        expect(m.address).to have_attributes(line1: new_street_address, town: new_suburb,
+                                             state: new_postcode.state, postcode: new_postcode.number)
       end
       it 'updates users in Tijuana with changes in Identity' do
         m = FactoryBot.create(:member_with_the_lot)
         IdentityTijuana::Postcode.create(number: m.address.postcode, state: m.address.state)
         IdentityTijuana.fetch_user_updates(@sync_id) {}
         u = User.find_by(email: m.email)
-        m.first_name = Faker::Name.first_name
-        m.last_name = Faker::Name.last_name
-        m.email = Faker::Internet.email
+        new_first_name = Faker::Name.first_name
+        new_last_name = Faker::Name.last_name
+        new_email = Faker::Internet.email
+        m.first_name = new_first_name
+        m.last_name = new_last_name
+        m.email = new_email
         m.save
-        FactoryBot.create(:mobile_number, member: m)
-        FactoryBot.create(:landline_number, member: m)
-        addr = FactoryBot.create(:address, member: m)
-        IdentityTijuana::Postcode.create(number: addr.postcode, state: addr.state)
+        new_mobile_number = FactoryBot.create(:mobile_number, member: m)
+        new_landline_number = FactoryBot.create(:landline_number, member: m)
+        new_address = FactoryBot.create(:address, member: m)
+        IdentityTijuana::Postcode.create(number: new_address.postcode, state: new_address.state)
         IdentityTijuana.fetch_user_updates(@sync_id) {}
         u.reload
         m.reload
-        expect(u).to have_attributes(email: m.email, first_name: m.first_name, last_name: m.last_name)
-        expect(u).to have_attributes(street_address: m.address.line1, suburb: m.address.town)
-        expect(u).to have_attributes(mobile_number: m.phone_numbers.mobile.first&.phone)
-        expect(u).to have_attributes(home_number: m.phone_numbers.landline.first&.phone)
-        expect(u.postcode.number).to eq(m.address.postcode)
-        expect(u.postcode.state).to eq(m.address.state)
+        expect(u).to have_attributes(email: new_email, first_name: new_first_name, last_name: new_last_name)
+        expect(u).to have_attributes(street_address: new_address.line1, suburb: new_address.town)
+        expect(u).to have_attributes(mobile_number: new_mobile_number.phone)
+        expect(u).to have_attributes(home_number: new_landline_number.phone)
+        expect(u.postcode.number).to eq(new_address.postcode)
+        expect(u.postcode.state).to eq(new_address.state)
       end
     end
 
