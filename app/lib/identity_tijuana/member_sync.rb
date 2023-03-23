@@ -321,7 +321,8 @@ module IdentityTijuana
           member_hash[:subscriptions] = [] unless member_hash.has_key?(:subscriptions)
           member_hash[:subscriptions].push({
             id: Settings.tijuana.email_subscription_id,
-            action: tj_email_subbed ? 'subscribe' : 'unsubscribe'
+            action: tj_email_subbed ? 'subscribe' : 'unsubscribe',
+            reason: 'tijuana'
           })
         },
         Proc.new {
@@ -344,7 +345,8 @@ module IdentityTijuana
           member_hash[:subscriptions] = [] unless member_hash.has_key?(:subscriptions)
           member_hash[:subscriptions].push({
             id: Settings.tijuana.sms_subscription_id,
-            action: tj_sms_subbed ? 'subscribe' : 'unsubscribe'
+            action: tj_sms_subbed ? 'subscribe' : 'unsubscribe',
+            reason: 'tijuana'
           })
         },
         Proc.new { tj_changes[:do_not_sms] = !id_sms_subbed }
@@ -364,7 +366,8 @@ module IdentityTijuana
           member_hash[:subscriptions] = [] unless member_hash.has_key?(:subscriptions)
           member_hash[:subscriptions].push({
             id: Settings.tijuana.calling_subscription_id,
-            action: tj_calling_subbed ? 'subscribe' : 'unsubscribe'
+            action: tj_calling_subbed ? 'subscribe' : 'unsubscribe',
+            reason: 'tijuana'
           })
         },
         Proc.new { tj_changes[:do_not_call] = !id_calling_subbed }
