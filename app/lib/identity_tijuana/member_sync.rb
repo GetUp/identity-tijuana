@@ -423,7 +423,6 @@ module IdentityTijuana
           member_hash[:lastname] = member&.last_name unless member_hash.key?(:lastname) # Required param
           member_hash[:external_ids] = { tijuana: user&.id } # Needed for lookup
           member_hash[:emails] = [{email: user&.email}] if sync_type == :merge # Needed for lookup
-          member_hash[:apply_email_address_changes] = true # Ensure email address changes are honored
           member_hash[:ignore_phone_number_match] = true # Don't match by phone number, too error-prone
 
           new_member = UpsertMember.call(
