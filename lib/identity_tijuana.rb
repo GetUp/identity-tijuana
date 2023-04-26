@@ -4,7 +4,7 @@ module IdentityTijuana
   SYSTEM_NAME = 'tijuana'
   SYNCING = 'tag'
   CONTACT_TYPE = 'email'
-  PULL_JOBS = [[:fetch_user_updates, 10.minutes]]
+  PULL_JOBS = [[:fetch_campaign_updates, 10.minutes], [:fetch_user_updates, 10.minutes]]
   MEMBER_RECORD_DATA_TYPE='object'
   MUTEX_EXPIRY_DURATION = 10.minutes
 
@@ -69,6 +69,247 @@ module IdentityTijuana
     end
   end
 
+  def self.fetch_campaign_updates(sync_id)
+    started_at = DateTime.now
+    last_updated_at = get_redis_date('tijuana:campaigns:last_updated_at')
+    last_id = (Sidekiq.redis { |r| r.get 'tijuana:campaigns:last_id' } || 0).to_i
+    campaigns_dependent_data_cutoff = DateTime.now
+    updated_campaigns = IdentityTijuana::Campaign.updated_campaigns(last_updated_at, last_id)
+    updated_campaigns_all = IdentityTijuana::Campaign.updated_campaigns_all(last_updated_at, last_id)
+
+    updated_campaigns.each do |campaign|
+      campaign.import(sync_id)
+    end
+
+    unless updated_campaigns.empty?
+      campaigns_dependent_data_cutoff = updated_campaigns.last.updated_at if updated_campaigns.count < updated_campaigns_all.count
+    end
+
+    # Erase any logically deleted campaigns from ID.
+    deleted_campaigns = IdentityTijuana::Campaign.deleted_campaigns(last_updated_at, campaigns_dependent_data_cutoff)
+    deleted_campaigns.each do |campaign|
+      campaign.erase(sync_id)
+    end
+
+    unless updated_campaigns.empty?
+      set_redis_date('tijuana:campaigns:last_updated_at', updated_campaigns.last.updated_at)
+      Sidekiq.redis { |r| r.set 'tijuana:campaigns:last_id', updated_campaigns.last.id }
+    end
+
+    set_redis_date('tijuana:campaigns:dependent_data_cutoff', campaigns_dependent_data_cutoff)
+
+    execution_time_seconds = ((DateTime.now - started_at) * 24 * 60 * 60).to_i
+    yield(
+      updated_campaigns.size,
+        updated_campaigns.pluck(:id),
+        {
+          scope: 'tijuana:campaigns:last_updated_at',
+          scope_limit: Settings.tijuana.pull_batch_amount,
+          from: last_updated_at,
+          to: updated_campaigns.empty? ? nil : updated_campaigns.last.updated_at,
+          started_at: started_at,
+          completed_at: DateTime.now,
+          execution_time_seconds: execution_time_seconds,
+          remaining_behind: updated_campaigns_all.count
+        },
+        false
+    )
+
+    release_mutex_lock(:fetch_campaign_updates)
+    need_another_batch = updated_campaigns.count < updated_campaigns_all.count
+    if need_another_batch
+      schedule_pull_batch(:fetch_campaign_updates)
+    else
+      schedule_pull_batch(:fetch_page_sequence_updates)
+      schedule_pull_batch(:fetch_push_updates)
+    end
+  end
+
+  def self.fetch_page_sequence_updates(sync_id)
+    started_at = DateTime.now
+    last_updated_at = get_redis_date('tijuana:page_sequences:last_updated_at')
+    last_id = (Sidekiq.redis { |r| r.get 'tijuana:page_sequences:last_id' } || 0).to_i
+    campaigns_dependent_data_cutoff = get_redis_date('tijuana:campaigns:dependent_data_cutoff')
+    updated_page_sequences = IdentityTijuana::PageSequence.updated_page_sequences(last_updated_at, last_id, campaigns_dependent_data_cutoff)
+    updated_page_sequences_all = IdentityTijuana::PageSequence.updated_page_sequences_all(last_updated_at, last_id, campaigns_dependent_data_cutoff)
+
+    updated_page_sequences.each do |page_sequence|
+      page_sequence.import(sync_id)
+    end
+
+    # Erase any logically deleted page sequences from ID.
+    deleted_page_sequences = IdentityTijuana::PageSequence.deleted_page_sequences(last_updated_at, campaigns_dependent_data_cutoff)
+    deleted_page_sequences.each do |page_sequence|
+      page_sequence.erase(sync_id)
+    end
+
+    unless updated_page_sequences.empty?
+      set_redis_date('tijuana:page_sequences:last_updated_at', updated_page_sequences.last.updated_at)
+      Sidekiq.redis { |r| r.set 'tijuana:page_sequences:last_id', updated_page_sequences.last.id }
+    end
+
+    execution_time_seconds = ((DateTime.now - started_at) * 24 * 60 * 60).to_i
+    yield(
+      updated_page_sequences.size,
+        updated_page_sequences.pluck(:id),
+        {
+          scope: 'tijuana:page_sequences:last_updated_at',
+          scope_limit: Settings.tijuana.pull_batch_amount,
+          from: last_updated_at,
+          to: updated_page_sequences.empty? ? nil : updated_page_sequences.last.updated_at,
+          started_at: started_at,
+          completed_at: DateTime.now,
+          execution_time_seconds: execution_time_seconds,
+          remaining_behind: updated_page_sequences_all.count
+        },
+        false
+    )
+
+    release_mutex_lock(:fetch_page_sequence_updates)
+    need_another_batch = updated_page_sequences.count < updated_page_sequences_all.count
+    schedule_pull_batch(need_another_batch ? :fetch_page_sequence_updates : :fetch_content_module_updates)
+  end
+
+  def self.fetch_content_module_updates(sync_id)
+    started_at = DateTime.now
+    last_updated_at = get_redis_date('tijuana:content_modules:last_updated_at')
+    last_id = (Sidekiq.redis { |r| r.get 'tijuana:content_modules:last_id' } || 0).to_i
+    campaigns_dependent_data_cutoff = get_redis_date('tijuana:campaigns:dependent_data_cutoff')
+    updated_content_modules = IdentityTijuana::ContentModule.updated_content_modules(last_updated_at, last_id, campaigns_dependent_data_cutoff)
+    updated_content_modules_all = IdentityTijuana::ContentModule.updated_content_modules_all(last_updated_at, last_id, campaigns_dependent_data_cutoff)
+
+    updated_content_modules.each do |content_module_info|
+      content_module = IdentityTijuana::ContentModule.find(content_module_info["content_module_id"])
+      content_module.import(sync_id, content_module_info["page_sequence_id"])
+    end
+
+    # Search for content modules that have been decoupled from pages in TJ and delete them from ID.
+    # First build a set of all valid external IDs from TJ, then go through the ID actions to ensure
+    # that each of them should still be there.
+    external_ids = Set.new IdentityTijuana::ContentModule.content_modules_all.map { |content_module_info|
+      "#{content_module_info["page_sequence_id"]}_#{content_module_info["content_module_id"]}"
+    }
+    Action.where(external_source: 'tijuana').each do |action|
+      action.destroy unless external_ids.include?(action.external_id)
+    end
+
+    unless updated_content_modules.empty?
+      set_redis_date('tijuana:content_modules:last_updated_at', updated_content_modules.last["content_module_updated_at"])
+      Sidekiq.redis { |r| r.set 'tijuana:content_modules:last_id', updated_content_modules.last["content_module_id"] }
+    end
+
+    execution_time_seconds = ((DateTime.now - started_at) * 24 * 60 * 60).to_i
+    yield(
+      updated_content_modules.size,
+        updated_content_modules.pluck(1),
+        {
+          scope: 'tijuana:content_modules:last_updated_at',
+          scope_limit: Settings.tijuana.pull_batch_amount,
+          from: last_updated_at,
+          to: updated_content_modules.empty? ? nil : updated_content_modules.last["content_module_updated_at"],
+          started_at: started_at,
+          completed_at: DateTime.now,
+          execution_time_seconds: execution_time_seconds,
+          remaining_behind: updated_content_modules_all.count
+        },
+        false
+    )
+
+    release_mutex_lock(:fetch_content_module_updates)
+    need_another_batch = updated_content_modules.count < updated_content_modules_all.count
+    schedule_pull_batch(:fetch_content_module_updates) if need_another_batch
+  end
+
+  def self.fetch_push_updates(sync_id)
+    started_at = DateTime.now
+    last_updated_at = get_redis_date('tijuana:pushes:last_updated_at')
+    last_id = (Sidekiq.redis { |r| r.get 'tijuana:pushes:last_id' } || 0).to_i
+    campaigns_dependent_data_cutoff = get_redis_date('tijuana:campaigns:dependent_data_cutoff')
+    updated_pushes = IdentityTijuana::Push.updated_pushes(last_updated_at, last_id, campaigns_dependent_data_cutoff)
+    updated_pushes_all = IdentityTijuana::Push.updated_pushes_all(last_updated_at, last_id, campaigns_dependent_data_cutoff)
+
+    updated_pushes.each do |push|
+      push.import(sync_id)
+    end
+
+    # Erase any logically deleted pushes from ID.
+    deleted_pushes = IdentityTijuana::Push.deleted_pushes(last_updated_at, campaigns_dependent_data_cutoff)
+    deleted_pushes.each do |push|
+      push.erase(sync_id)
+    end
+
+    unless updated_pushes.empty?
+      set_redis_date('tijuana:pushes:last_updated_at', updated_pushes.last.updated_at)
+      Sidekiq.redis { |r| r.set 'tijuana:pushes:last_id', updated_pushes.last.id }
+    end
+
+    execution_time_seconds = ((DateTime.now - started_at) * 24 * 60 * 60).to_i
+    yield(
+      updated_pushes.size,
+        updated_pushes.pluck(:id),
+        {
+          scope: 'tijuana:pushes:last_updated_at',
+          scope_limit: Settings.tijuana.pull_batch_amount,
+          from: last_updated_at,
+          to: updated_pushes.empty? ? nil : updated_pushes.last.updated_at,
+          started_at: started_at,
+          completed_at: DateTime.now,
+          execution_time_seconds: execution_time_seconds,
+          remaining_behind: updated_pushes_all.count
+        },
+        false
+    )
+
+    release_mutex_lock(:fetch_push_updates)
+    need_another_batch = updated_pushes.count < updated_pushes_all.count
+    schedule_pull_batch(need_another_batch ? :fetch_push_updates : :fetch_blast_updates)
+  end
+
+  def self.fetch_blast_updates(sync_id)
+    started_at = DateTime.now
+    last_updated_at = get_redis_date('tijuana:blasts:last_updated_at')
+    last_id = (Sidekiq.redis { |r| r.get 'tijuana:blasts:last_id' } || 0).to_i
+    campaigns_dependent_data_cutoff = get_redis_date('tijuana:campaigns:dependent_data_cutoff')
+    updated_blasts = IdentityTijuana::Blast.updated_blasts(last_updated_at, last_id, campaigns_dependent_data_cutoff)
+    updated_blasts_all = IdentityTijuana::Blast.updated_blasts_all(last_updated_at, last_id, campaigns_dependent_data_cutoff)
+
+    updated_blasts.each do |blast|
+      blast.import(sync_id)
+    end
+
+    # Erase any logically deleted blasts from ID.
+    # deleted_blasts = IdentityTijuana::Blast.deleted_blasts(last_updated_at, campaigns_dependent_data_cutoff)
+    # deleted_blasts.each do |blast|
+    #   blast.erase(sync_id)
+    # end
+
+    unless updated_blasts.empty?
+      set_redis_date('tijuana:blasts:last_updated_at', updated_blasts.last.updated_at)
+      Sidekiq.redis { |r| r.set 'tijuana:blasts:last_id', updated_blasts.last.id }
+    end
+
+    execution_time_seconds = ((DateTime.now - started_at) * 24 * 60 * 60).to_i
+    yield(
+      updated_blasts.size,
+        updated_blasts.pluck(:id),
+        {
+          scope: 'tijuana:blasts:last_updated_at',
+          scope_limit: Settings.tijuana.pull_batch_amount,
+          from: last_updated_at,
+          to: updated_blasts.empty? ? nil : updated_blasts.last.updated_at,
+          started_at: started_at,
+          completed_at: DateTime.now,
+          execution_time_seconds: execution_time_seconds,
+          remaining_behind: updated_blasts_all.count
+        },
+        false
+    )
+
+    release_mutex_lock(:fetch_blast_updates)
+    need_another_batch = updated_blasts.count < updated_blasts_all.count
+    schedule_pull_batch(:fetch_blast_updates) if need_another_batch
+  end
+
   def self.fetch_user_updates(sync_id)
     started_at = DateTime.now
     last_updated_at = get_redis_date('tijuana:users:last_updated_at')
@@ -87,29 +328,30 @@ module IdentityTijuana
     updated_member_ids = Member.connection.execute(<<~SQL
         SELECT id as member_id
         FROM members
-        WHERE updated_at > '#{last_updated_at}'
-        AND updated_at <= '#{users_dependent_data_cutoff}'
-        UNION
-        SELECT DISTINCT member_id
-        FROM addresses
-        WHERE updated_at > '#{last_updated_at}'
-        AND updated_at <= '#{users_dependent_data_cutoff}'
-        UNION
-        SELECT distinct member_id
-        FROM custom_fields
-        WHERE updated_at > '#{last_updated_at}'
-        AND updated_at <= '#{users_dependent_data_cutoff}'
-        UNION
-        SELECT DISTINCT member_id
-        FROM member_subscriptions
-        WHERE updated_at > '#{last_updated_at}'
-        AND updated_at <= '#{users_dependent_data_cutoff}'
-        UNION
-        SELECT DISTINCT member_id
-        FROM phone_numbers
-        WHERE updated_at > '#{last_updated_at}'
-        AND updated_at <= '#{users_dependent_data_cutoff}'
-        ORDER BY member_id;
+        WHERE (updated_at > '#{last_updated_at}'
+        AND updated_at <= '#{users_dependent_data_cutoff}')
+        OR id IN (
+          SELECT DISTINCT member_id
+          FROM addresses
+          WHERE updated_at > '#{last_updated_at}'
+          AND updated_at <= '#{users_dependent_data_cutoff}'
+          UNION
+          SELECT distinct member_id
+          FROM custom_fields
+          WHERE updated_at > '#{last_updated_at}'
+          AND updated_at <= '#{users_dependent_data_cutoff}'
+          UNION
+          SELECT DISTINCT member_id
+          FROM member_subscriptions
+          WHERE updated_at > '#{last_updated_at}'
+          AND updated_at <= '#{users_dependent_data_cutoff}'
+          UNION
+          SELECT DISTINCT member_id
+          FROM phone_numbers
+          WHERE updated_at > '#{last_updated_at}'
+          AND updated_at <= '#{users_dependent_data_cutoff}'
+          ORDER BY member_id
+        );
       SQL
     ).map {|member_id_row| member_id_row['member_id']}
 
@@ -364,7 +606,7 @@ module IdentityTijuana
   end
 
   def self.set_redis_date(redis_identifier, date_time_value, as_mutex=false)
-    date_str = date_time_value.utc.to_fs(:inspect) # Ensures fractional seconds are retained
+    date_str = date_time_value.utc.strftime("%Y-%m-%d %H:%M:%S.%9N %z") # Ensures fractional seconds are retained
     if as_mutex
       Sidekiq.redis { |r| r.setnx redis_identifier, date_str }
     else

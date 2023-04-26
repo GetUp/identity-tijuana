@@ -37,6 +37,191 @@ describe IdentityTijuana do
     end
   end
 
+  context '#fetch_campaign_updates' do
+    context 'TJ campaign/ID issue handling' do
+      before do
+        @tj_campaign_1 = IdentityTijuana::Campaign.create(name: 'Campaign 1')
+        @tj_campaign_2 = IdentityTijuana::Campaign.create(name: 'Campaign 2')
+      end
+
+      it 'creates TJ campaigns as issues in Identity' do
+        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+        expect(Issue.count).to eq(2)
+      end
+
+      it 'updates changed TJ campaigns in Identity' do
+        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+        expect(Issue.find_by(external_id: @tj_campaign_1.id, external_source: 'tijuana').name).to eq('Campaign 1')
+        @tj_campaign_1.name = 'Campaign 1 changed'
+        @tj_campaign_1.save!
+        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+        expect(Issue.find_by(external_id: @tj_campaign_1.id, external_source: 'tijuana').name).to eq('Campaign 1 changed')
+      end
+
+      it 'doesnt create deleted TJ campaigns as issues in Identity' do
+        @tj_campaign_2.deleted_at = DateTime.now.utc
+        @tj_campaign_2.save!
+        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+        expect(Issue.count).to eq(1)
+      end
+
+      it 'removes deleted TJ campaigns from Identity' do
+        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+        expect(Issue.count).to eq(2)
+        @tj_campaign_2.deleted_at = DateTime.now.utc
+        @tj_campaign_2.save!
+        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+        expect(Issue.count).to eq(1)
+      end
+    end
+
+    context 'TJ page sequence/ID campaign handling' do
+      before do
+        @tj_campaign = IdentityTijuana::Campaign.create
+        @tj_page_sequence_1 = IdentityTijuana::PageSequence.create(campaign_id: @tj_campaign.id, name: 'Page Sequence 1')
+        @tj_page_sequence_2 = IdentityTijuana::PageSequence.create(campaign_id: @tj_campaign.id, name: 'Page Sequence 2')
+      end
+
+      it 'creates TJ page sequences as campaigns in Identity' do
+        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+        IdentityTijuana.fetch_page_sequence_updates(@sync_id) {}
+        expect(Campaign.count).to eq(2)
+      end
+
+      it 'updates changed TJ page sequences in Identity' do
+        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+        IdentityTijuana.fetch_page_sequence_updates(@sync_id) {}
+        expect(Campaign.find_by(external_id: @tj_page_sequence_1.id, external_source: 'tijuana_page_sequence').name).to eq('Page Sequence 1')
+        @tj_page_sequence_1.name = 'Page Sequence 1 changed'
+        @tj_page_sequence_1.save!
+        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+        IdentityTijuana.fetch_page_sequence_updates(@sync_id) {}
+        expect(Campaign.find_by(external_id: @tj_page_sequence_1.id, external_source: 'tijuana_page_sequence').name).to eq('Page Sequence 1 changed')
+      end
+
+      it 'doesnt create deleted TJ page sequences as campaigns in Identity' do
+        @tj_page_sequence_2.deleted_at = DateTime.now.utc
+        @tj_page_sequence_2.save!
+        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+        IdentityTijuana.fetch_page_sequence_updates(@sync_id) {}
+        expect(Campaign.count).to eq(1)
+      end
+
+      it 'removes deleted TJ page sequences from Identity' do
+        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+        IdentityTijuana.fetch_page_sequence_updates(@sync_id) {}
+        expect(Campaign.count).to eq(2)
+        @tj_page_sequence_2.deleted_at = DateTime.now.utc
+        @tj_page_sequence_2.save!
+        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+        IdentityTijuana.fetch_page_sequence_updates(@sync_id) {}
+        expect(Campaign.count).to eq(1)
+      end
+    end
+
+    context 'TJ push/ID campaign handling' do
+      before do
+        @tj_campaign = IdentityTijuana::Campaign.create
+        @tj_push_1 = IdentityTijuana::Push.create(campaign_id: @tj_campaign.id, name: 'Push 1')
+        @tj_push_2 = IdentityTijuana::Push.create(campaign_id: @tj_campaign.id, name: 'Push 2')
+      end
+
+      it 'creates TJ pushes as campaigns in Identity' do
+        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+        IdentityTijuana.fetch_push_updates(@sync_id) {}
+        expect(Campaign.count).to eq(2)
+      end
+
+      it 'updates changed TJ pushes in Identity' do
+        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+        IdentityTijuana.fetch_push_updates(@sync_id) {}
+        expect(Campaign.find_by(external_id: @tj_push_1.id, external_source: 'tijuana_push').name).to eq('Push 1')
+        @tj_push_1.name = 'Push 1 changed'
+        @tj_push_1.save!
+        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+        IdentityTijuana.fetch_push_updates(@sync_id) {}
+        expect(Campaign.find_by(external_id: @tj_push_1.id, external_source: 'tijuana_push').name).to eq('Push 1 changed')
+      end
+
+      it 'doesnt create deleted TJ pushes as campaigns in Identity' do
+        @tj_push_2.deleted_at = DateTime.now.utc
+        @tj_push_2.save!
+        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+        IdentityTijuana.fetch_push_updates(@sync_id) {}
+        expect(Campaign.count).to eq(1)
+      end
+
+      it 'removes deleted TJ pushes from Identity' do
+        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+        IdentityTijuana.fetch_push_updates(@sync_id) {}
+        expect(Campaign.count).to eq(2)
+        @tj_push_2.deleted_at = DateTime.now.utc
+        @tj_push_2.save!
+        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+        IdentityTijuana.fetch_push_updates(@sync_id) {}
+        expect(Campaign.count).to eq(1)
+      end
+    end
+
+    context 'TJ content module/ID action handling' do
+      before do
+        yesterday = DateTime.now - 1
+        @tj_campaign = IdentityTijuana::Campaign.create
+        @tj_page_sequence_1 = IdentityTijuana::PageSequence.create(campaign_id: @tj_campaign.id)
+        @tj_page_sequence_2 = IdentityTijuana::PageSequence.create(campaign_id: @tj_campaign.id)
+        @tj_page_1 = IdentityTijuana::Page.create(page_sequence: @tj_page_sequence_1, name: 'Page 1')
+        @tj_page_2 = IdentityTijuana::Page.create(page_sequence: @tj_page_sequence_2, name: 'Page 2')
+        @tj_content_module_1 = IdentityTijuana::ContentModule.create(type: 'DonationsModule', title: 'Content Module 1', created_at: yesterday, updated_at: yesterday)
+        @tj_content_module_2 = IdentityTijuana::ContentModule.create(type: 'DonationsModule', title: 'Content Module 2', created_at: yesterday, updated_at: yesterday)
+        @tj_content_module_3 = IdentityTijuana::ContentModule.create(type: 'DonationsModule', title: 'Content Module 3', created_at: yesterday, updated_at: yesterday)
+        @tj_page_1.content_modules = [@tj_content_module_1, @tj_content_module_2]
+        @tj_page_1.save!
+        @tj_page_2.content_modules = [@tj_content_module_2, @tj_content_module_3]
+        @tj_page_2.save!
+      end
+
+      it 'creates TJ content modules as actions in Identity' do
+        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+        IdentityTijuana.fetch_page_sequence_updates(@sync_id) {}
+        IdentityTijuana.fetch_content_module_updates(@sync_id) {}
+        expect(Action.count).to eq(4)
+      end
+
+      it 'updates changed TJ content modules in Identity' do
+        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+        IdentityTijuana.fetch_page_sequence_updates(@sync_id) {}
+        IdentityTijuana.fetch_content_module_updates(@sync_id) {}
+        content_module_id = "#{@tj_page_sequence_1.id}_#{@tj_content_module_1.id}"
+        expect(Action.find_by(external_id: content_module_id, external_source: 'tijuana').name).to eq('DonationsModule: Content Module 1')
+        @tj_content_module_1.title = 'Content Module 1 changed'
+        @tj_content_module_1.save!
+        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+        IdentityTijuana.fetch_page_sequence_updates(@sync_id) {}
+        IdentityTijuana.fetch_content_module_updates(@sync_id) {}
+        expect(Action.find_by(external_id: content_module_id, external_source: 'tijuana').name).to eq('DonationsModule: Content Module 1 changed')
+      end
+
+      # it 'doesnt create deleted TJ pushes as campaigns in Identity' do
+      #   @tj_push_2.deleted_at = DateTime.now.utc
+      #   @tj_push_2.save!
+      #   IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+      #   IdentityTijuana.fetch_push_updates(@sync_id) {}
+      #   expect(Campaign.count).to eq(1)
+      # end
+      #
+      # it 'removes deleted TJ pushes from Identity' do
+      #   IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+      #   IdentityTijuana.fetch_push_updates(@sync_id) {}
+      #   expect(Campaign.count).to eq(2)
+      #   @tj_push_2.deleted_at = DateTime.now.utc
+      #   @tj_push_2.save!
+      #   IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+      #   IdentityTijuana.fetch_push_updates(@sync_id) {}
+      #   expect(Campaign.count).to eq(1)
+      # end
+    end
+  end
+
   context '#fetch_user_updates' do
     before do
       @email_sub = FactoryBot.create(:email_subscription)
