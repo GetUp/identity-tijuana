@@ -2,22 +2,72 @@
 # of editing this file, please use the migrations feature of Active Record to
 # incrementally modify your database, and then regenerate this schema definition.
 #
-# Note that this schema.rb definition is the authoritative source for your
-# database schema. If you need to create the application database on another
-# system, you should be using db:schema:load, not running all the migrations
-# from scratch. The latter is a flawed and unsustainable approach (the more migrations
-# you'll amass, the slower it'll run and the greater likelihood for issues).
+# This file is the source Rails uses to define your schema when running `rails
+# db:schema:load`. When creating a new database, `rails db:schema:load` tends to
+# be faster and is potentially less error prone than running all of your
+# migrations from scratch. Old migrations may fail to apply correctly if those
+# migrations use external dependencies or application code.
 #
 # It's strongly recommended that you check this file into your version control system.
 
 ActiveRecord::Schema.define(version: 0) do
 
   # These are extensions that must be enabled in order to support this database
-  enable_extension "plpgsql"
-  enable_extension "pg_trgm"
   enable_extension "btree_gin"
   enable_extension "btree_gist"
   enable_extension "intarray"
+  enable_extension "pg_trgm"
+  enable_extension "plpgsql"
+
+  create_table "actions", force: :cascade do |t|
+    t.text "name"
+    t.text "action_type"
+    t.text "technical_type"
+    t.string "external_id"
+    t.integer "old_action_id"
+    t.datetime "created_at"
+    t.datetime "updated_at"
+    t.integer "campaign_id"
+    t.text "description"
+    t.text "status"
+    t.string "public_name"
+    t.string "language"
+    t.string "external_source"
+    t.index ["campaign_id"], name: "index_actions_on_campaign_id"
+    t.index ["external_id", "technical_type", "language"], name: "index_actions_on_external_id_and_technical_type_and_language", unique: true
+    t.index ["old_action_id"], name: "index_actions_on_old_action_id"
+  end
+
+  create_table "actions_mailings", force: :cascade do |t|
+    t.integer "mailing_id", null: false
+    t.integer "action_id", null: false
+    t.datetime "created_at"
+    t.datetime "updated_at"
+    t.index ["action_id"], name: "index_actions_mailings_on_action_id"
+    t.index ["mailing_id"], name: "index_actions_mailings_on_mailing_id"
+  end
+
+  create_table "active_record_audits", id: :serial, force: :cascade do |t|
+    t.integer "auditable_id"
+    t.string "auditable_type"
+    t.integer "associated_id"
+    t.string "associated_type"
+    t.integer "user_id"
+    t.string "user_type"
+    t.string "username"
+    t.string "action"
+    t.json "audited_changes"
+    t.integer "version", default: 0
+    t.text "comment"
+    t.string "remote_address"
+    t.string "request_uuid"
+    t.datetime "created_at"
+    t.index ["associated_id", "associated_type"], name: "associated_index"
+    t.index ["auditable_id", "auditable_type"], name: "auditable_index"
+    t.index ["created_at"], name: "index_active_record_audits_on_created_at"
+    t.index ["request_uuid"], name: "index_active_record_audits_on_request_uuid"
+    t.index ["user_id", "user_type"], name: "user_index"
+  end
 
   create_table "addresses", force: :cascade do |t|
     t.integer "member_id", null: false
@@ -67,6 +117,32 @@ ActiveRecord::Schema.define(version: 0) do
     t.text "representative_gender"
   end
 
+  create_table "campaigns", force: :cascade do |t|
+    t.text "name"
+    t.datetime "created_at"
+    t.datetime "updated_at"
+    t.integer "issue_id"
+    t.text "description"
+    t.integer "author_id"
+    t.integer "controlshift_campaign_id"
+    t.text "campaign_type"
+    t.float "latitude"
+    t.float "longitude"
+    t.text "location"
+    t.text "image"
+    t.text "url"
+    t.text "slug"
+    t.text "moderation_status"
+    t.datetime "finished_at"
+    t.string "target_type"
+    t.string "outcome"
+    t.string "languages", default: [], array: true
+    t.string "external_id"
+    t.string "external_source"
+    t.index ["author_id"], name: "index_campaigns_on_author_id"
+    t.index ["issue_id"], name: "index_campaigns_on_issue_id"
+  end
+
   create_table "canonical_addresses", id: :serial, force: :cascade do |t|
     t.string "official_id"
     t.text "line1"
@@ -80,9 +156,9 @@ ActiveRecord::Schema.define(version: 0) do
     t.text "search_text"
     t.datetime "created_at"
     t.datetime "updated_at"
-    t.index "search_text gist_trgm_ops", name: "canonical_addresses_search_text", using: :gist
     t.index ["official_id"], name: "index_canonical_addresses_on_official_id"
     t.index ["postcode"], name: "index_canonical_addresses_on_postcode"
+    t.index ["search_text"], name: "canonical_addresses_search_text", opclass: :gist_trgm_ops, using: :gist
   end
 
   create_table "contact_campaigns", id: :serial, force: :cascade do |t|
@@ -167,6 +243,30 @@ ActiveRecord::Schema.define(version: 0) do
     t.datetime "updated_at"
   end
 
+  create_table "issue_categories", id: :serial, force: :cascade do |t|
+    t.text "name"
+    t.datetime "created_at"
+    t.datetime "updated_at"
+  end
+
+  create_table "issue_categories_issues", id: :serial, force: :cascade do |t|
+    t.integer "issue_id", null: false
+    t.integer "issue_category_id", null: false
+    t.datetime "created_at"
+    t.datetime "updated_at"
+    t.index ["issue_category_id"], name: "index_issue_categories_issues_on_issue_category_id"
+    t.index ["issue_id"], name: "index_issue_categories_issues_on_issue_id"
+  end
+
+  create_table "issues", id: :serial, force: :cascade do |t|
+    t.text "name"
+    t.datetime "created_at"
+    t.datetime "updated_at"
+    t.boolean "default"
+    t.string "external_id"
+    t.string "external_source"
+  end
+
   create_table "list_members", id: :serial, force: :cascade do |t|
     t.integer "list_id", null: false
     t.integer "member_id", null: false
@@ -187,6 +287,112 @@ ActiveRecord::Schema.define(version: 0) do
     t.bigint "author_id"
     t.index ["search_id"], name: "index_lists_on_search_id"
     t.index ["synced_to_redshift"], name: "index_lists_on_synced_to_redshift"
+  end
+
+  create_table "mailing_test_cases", id: :serial, force: :cascade do |t|
+    t.integer "mailing_test_id", null: false
+    t.text "template"
+    t.datetime "created_at"
+    t.datetime "updated_at"
+    t.index ["mailing_test_id"], name: "index_mailing_test_cases_on_mailing_test_id"
+  end
+
+  create_table "mailing_tests", id: :serial, force: :cascade do |t|
+    t.text "name"
+    t.text "test_type"
+    t.text "tags"
+    t.text "description"
+    t.text "merge_tag"
+    t.integer "mailing_id", null: false
+    t.datetime "created_at"
+    t.datetime "updated_at"
+    t.index ["mailing_id"], name: "index_mailing_tests_on_mailing_id"
+  end
+
+  create_table "mailing_variation_test_cases", id: :serial, force: :cascade do |t|
+    t.integer "mailing_variation_id", null: false
+    t.integer "mailing_test_case_id", null: false
+    t.index ["mailing_test_case_id"], name: "index_mailing_variation_test_cases_on_mailing_test_case_id"
+    t.index ["mailing_variation_id"], name: "index_mailing_variation_test_cases_on_mailing_variation_id"
+  end
+
+  create_table "mailing_variations", id: :serial, force: :cascade do |t|
+    t.integer "mailing_id", null: false
+    t.datetime "created_at"
+    t.datetime "updated_at"
+    t.integer "total_opens", default: 0, null: false
+    t.integer "total_clicks", default: 0, null: false
+    t.integer "total_members", default: 0, null: false
+    t.integer "total_actions", default: 0, null: false
+    t.decimal "donate_amount", precision: 10, scale: 2, default: "0.0"
+    t.integer "donate_count", default: 0, null: false
+    t.decimal "reg_donate_amount", precision: 10, scale: 2, default: "0.0"
+    t.integer "reg_donate_count", default: 0, null: false
+    t.string "external_id"
+    t.string "external_source"
+    t.index ["mailing_id"], name: "index_mailing_variations_on_mailing_id"
+  end
+
+  create_table "mailings", force: :cascade do |t|
+    t.integer "external_id"
+    t.text "name"
+    t.text "subject"
+    t.text "body_html"
+    t.text "body_plain"
+    t.text "from"
+    t.datetime "created_at"
+    t.datetime "updated_at"
+    t.boolean "recipients_synced"
+    t.integer "member_count"
+    t.text "parsed_html"
+    t.integer "mailing_template_id"
+    t.integer "list_id"
+    t.float "send_time"
+    t.datetime "prepared_send_at"
+    t.integer "total_opens", default: 0
+    t.integer "total_clicks", default: 0
+    t.text "from_name"
+    t.text "from_email"
+    t.integer "total_spam_reports", default: 0
+    t.integer "total_bounces", default: 0
+    t.datetime "finished_sending_at"
+    t.integer "total_unsubscribes", default: 0
+    t.datetime "scheduled_for"
+    t.boolean "priority"
+    t.integer "processed_count"
+    t.boolean "aborted", default: false
+    t.boolean "recurring", default: false
+    t.integer "recurring_max_recipients_per_send"
+    t.integer "search_id"
+    t.integer "parent_mailing_id"
+    t.text "body_markdown"
+    t.text "recurring_schedule"
+    t.time "recurring_at"
+    t.integer "recurring_day"
+    t.datetime "recurring_last_run_started"
+    t.boolean "paused", default: false
+    t.boolean "is_controlled_externally", default: false, null: false
+    t.string "external_slug"
+    t.integer "total_actions", default: 0, null: false
+    t.decimal "total_donate_amount", precision: 10, scale: 2, default: "0.0"
+    t.integer "total_donate_count", default: 0, null: false
+    t.decimal "total_reg_donate_amount", precision: 10, scale: 2, default: "0.0"
+    t.integer "total_reg_donate_count", default: 0, null: false
+    t.datetime "started_send_at"
+    t.integer "cloned_mailing_id"
+    t.integer "prepared_count", default: 0, null: false
+    t.text "reply_to"
+    t.boolean "quiet_send", default: false, null: false
+    t.text "renderer", default: "liquid", null: false
+    t.text "archived_subject"
+    t.text "archived_body"
+    t.integer "campaign_id"
+    t.string "external_source"
+    t.index ["cloned_mailing_id"], name: "index_mailings_on_cloned_mailing_id"
+    t.index ["list_id"], name: "index_mailings_on_list_id"
+    t.index ["mailing_template_id"], name: "index_mailings_on_mailing_template_id"
+    t.index ["parent_mailing_id"], name: "index_mailings_on_parent_mailing_id"
+    t.index ["recurring"], name: "index_mailings_on_recurring"
   end
 
   create_table "member_external_ids", id: :serial, force: :cascade do |t|

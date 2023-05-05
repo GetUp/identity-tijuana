@@ -6,6 +6,34 @@ class Initial < ActiveRecord::Migration[4.2]
   enable_extension "btree_gist"
   enable_extension "intarray"
 
+  create_table "actions", force: :cascade do |t|
+    t.text "name"
+    t.text "action_type"
+    t.text "technical_type"
+    t.string "external_id"
+    t.integer "old_action_id"
+    t.datetime "created_at", precision: nil
+    t.datetime "updated_at", precision: nil
+    t.integer "campaign_id"
+    t.text "description"
+    t.text "status"
+    t.string "public_name"
+    t.string "language"
+    t.string "external_source"
+    t.index ["campaign_id"], name: "index_actions_on_campaign_id"
+    t.index ["external_id", "technical_type", "language"], name: "index_actions_on_external_id_and_technical_type_and_language", unique: true
+    t.index ["old_action_id"], name: "index_actions_on_old_action_id"
+  end
+
+  create_table "actions_mailings", force: :cascade do |t|
+    t.integer "mailing_id", null: false
+    t.integer "action_id", null: false
+    t.datetime "created_at", precision: nil
+    t.datetime "updated_at", precision: nil
+    t.index ["action_id"], name: "index_actions_mailings_on_action_id"
+    t.index ["mailing_id"], name: "index_actions_mailings_on_mailing_id"
+  end
+
   create_table "active_record_audits", id: :serial, force: :cascade do |t|
     t.integer "auditable_id"
     t.string "auditable_type"
@@ -27,7 +55,33 @@ class Initial < ActiveRecord::Migration[4.2]
     t.index ["request_uuid"], name: "index_active_record_audits_on_request_uuid"
     t.index ["user_id", "user_type"], name: "user_index"
   end
-  
+
+  create_table "campaigns", force: :cascade do |t|
+    t.text "name"
+    t.datetime "created_at", precision: nil
+    t.datetime "updated_at", precision: nil
+    t.integer "issue_id"
+    t.text "description"
+    t.integer "author_id"
+    t.integer "controlshift_campaign_id"
+    t.text "campaign_type"
+    t.float "latitude"
+    t.float "longitude"
+    t.text "location"
+    t.text "image"
+    t.text "url"
+    t.text "slug"
+    t.text "moderation_status"
+    t.datetime "finished_at", precision: nil
+    t.string "target_type"
+    t.string "outcome"
+    t.string "languages", default: [], array: true
+    t.string "external_id"
+    t.string "external_source"
+    t.index ["author_id"], name: "index_campaigns_on_author_id"
+    t.index ["issue_id"], name: "index_campaigns_on_issue_id"
+  end
+
   create_table "contact_campaigns", id: :serial, force: :cascade do |t|
     t.text "name"
     t.integer "external_id"
@@ -76,7 +130,6 @@ class Initial < ActiveRecord::Migration[4.2]
     t.index ["external_id"], name: "index_contacts_on_external_id"
   end
 
-  #??
   create_table "delayed_jobs", force: :cascade do |t|
     t.integer "priority", default: 0
     t.integer "attempts", default: 0
@@ -89,6 +142,30 @@ class Initial < ActiveRecord::Migration[4.2]
     t.string "queue"
     t.datetime "created_at"
     t.datetime "updated_at"
+  end
+
+  create_table "issue_categories", id: :serial, force: :cascade do |t|
+    t.text "name"
+    t.datetime "created_at", precision: nil
+    t.datetime "updated_at", precision: nil
+  end
+
+  create_table "issue_categories_issues", id: :serial, force: :cascade do |t|
+    t.integer "issue_id", null: false
+    t.integer "issue_category_id", null: false
+    t.datetime "created_at", precision: nil
+    t.datetime "updated_at", precision: nil
+    t.index ["issue_category_id"], name: "index_issue_categories_issues_on_issue_category_id"
+    t.index ["issue_id"], name: "index_issue_categories_issues_on_issue_id"
+  end
+
+  create_table "issues", id: :serial, force: :cascade do |t|
+    t.text "name"
+    t.datetime "created_at", precision: nil
+    t.datetime "updated_at", precision: nil
+    t.boolean "default"
+    t.string "external_id"
+    t.string "external_source"
   end
 
   create_table "list_members", id: :serial, force: :cascade do |t|
@@ -113,7 +190,112 @@ class Initial < ActiveRecord::Migration[4.2]
     t.index ["synced_to_redshift"], name: "index_lists_on_synced_to_redshift"
   end
 
-  #??
+  create_table "mailing_test_cases", id: :serial, force: :cascade do |t|
+    t.integer "mailing_test_id", null: false
+    t.text "template"
+    t.datetime "created_at", precision: nil
+    t.datetime "updated_at", precision: nil
+    t.index ["mailing_test_id"], name: "index_mailing_test_cases_on_mailing_test_id"
+  end
+
+  create_table "mailing_tests", id: :serial, force: :cascade do |t|
+    t.text "name"
+    t.text "test_type"
+    t.text "tags"
+    t.text "description"
+    t.text "merge_tag"
+    t.integer "mailing_id", null: false
+    t.datetime "created_at", precision: nil
+    t.datetime "updated_at", precision: nil
+    t.index ["mailing_id"], name: "index_mailing_tests_on_mailing_id"
+  end
+
+  create_table "mailing_variation_test_cases", id: :serial, force: :cascade do |t|
+    t.integer "mailing_variation_id", null: false
+    t.integer "mailing_test_case_id", null: false
+    t.index ["mailing_test_case_id"], name: "index_mailing_variation_test_cases_on_mailing_test_case_id"
+    t.index ["mailing_variation_id"], name: "index_mailing_variation_test_cases_on_mailing_variation_id"
+  end
+
+  create_table "mailing_variations", id: :serial, force: :cascade do |t|
+    t.integer "mailing_id", null: false
+    t.datetime "created_at", precision: nil
+    t.datetime "updated_at", precision: nil
+    t.integer "total_opens", default: 0, null: false
+    t.integer "total_clicks", default: 0, null: false
+    t.integer "total_members", default: 0, null: false
+    t.integer "total_actions", default: 0, null: false
+    t.decimal "donate_amount", precision: 10, scale: 2, default: "0.0"
+    t.integer "donate_count", default: 0, null: false
+    t.decimal "reg_donate_amount", precision: 10, scale: 2, default: "0.0"
+    t.integer "reg_donate_count", default: 0, null: false
+    t.string "external_id"
+    t.string "external_source"
+    t.index ["mailing_id"], name: "index_mailing_variations_on_mailing_id"
+  end
+
+  create_table "mailings", force: :cascade do |t|
+    t.integer "external_id"
+    t.text "name"
+    t.text "subject"
+    t.text "body_html"
+    t.text "body_plain"
+    t.text "from"
+    t.datetime "created_at", precision: nil
+    t.datetime "updated_at", precision: nil
+    t.boolean "recipients_synced"
+    t.integer "member_count"
+    t.text "parsed_html"
+    t.integer "mailing_template_id"
+    t.integer "list_id"
+    t.float "send_time"
+    t.datetime "prepared_send_at", precision: nil
+    t.integer "total_opens", default: 0
+    t.integer "total_clicks", default: 0
+    t.text "from_name"
+    t.text "from_email"
+    t.integer "total_spam_reports", default: 0
+    t.integer "total_bounces", default: 0
+    t.datetime "finished_sending_at", precision: nil
+    t.integer "total_unsubscribes", default: 0
+    t.datetime "scheduled_for", precision: nil
+    t.boolean "priority"
+    t.integer "processed_count"
+    t.boolean "aborted", default: false
+    t.boolean "recurring", default: false
+    t.integer "recurring_max_recipients_per_send"
+    t.integer "search_id"
+    t.integer "parent_mailing_id"
+    t.text "body_markdown"
+    t.text "recurring_schedule"
+    t.time "recurring_at"
+    t.integer "recurring_day"
+    t.datetime "recurring_last_run_started", precision: nil
+    t.boolean "paused", default: false
+    t.boolean "is_controlled_externally", default: false, null: false
+    t.string "external_slug"
+    t.integer "total_actions", default: 0, null: false
+    t.decimal "total_donate_amount", precision: 10, scale: 2, default: "0.0"
+    t.integer "total_donate_count", default: 0, null: false
+    t.decimal "total_reg_donate_amount", precision: 10, scale: 2, default: "0.0"
+    t.integer "total_reg_donate_count", default: 0, null: false
+    t.datetime "started_send_at", precision: nil
+    t.integer "cloned_mailing_id"
+    t.integer "prepared_count", default: 0, null: false
+    t.text "reply_to"
+    t.boolean "quiet_send", default: false, null: false
+    t.text "renderer", default: "liquid", null: false
+    t.text "archived_subject"
+    t.text "archived_body"
+    t.integer "campaign_id"
+    t.string "external_source"
+    t.index ["cloned_mailing_id"], name: "index_mailings_on_cloned_mailing_id"
+    t.index ["list_id"], name: "index_mailings_on_list_id"
+    t.index ["mailing_template_id"], name: "index_mailings_on_mailing_template_id"
+    t.index ["parent_mailing_id"], name: "index_mailings_on_parent_mailing_id"
+    t.index ["recurring"], name: "index_mailings_on_recurring"
+  end
+
   create_table "member_external_ids", id: :serial, force: :cascade do |t|
     t.integer "member_id", null: false
     t.string "system", null: false
@@ -178,7 +360,6 @@ class Initial < ActiveRecord::Migration[4.2]
     t.index ["role_id"], name: "index_members_on_role_id"
   end
 
-  #?
   create_table "organisation_memberships", force: :cascade do |t|
     t.integer "member_id", null: false
     t.integer "organisation_id", null: false
@@ -189,7 +370,6 @@ class Initial < ActiveRecord::Migration[4.2]
     t.index ["organisation_id"], name: "index_organisation_memberships_on_organisation_id"
   end
 
-  #?
   create_table "organisations", force: :cascade do |t|
     t.text "name"
     t.text "notes"
@@ -197,7 +377,6 @@ class Initial < ActiveRecord::Migration[4.2]
     t.datetime "updated_at"
   end
 
-  #?
   create_table "permissions", id: :serial, force: :cascade do |t|
     t.text "permission_slug"
     t.datetime "created_at"
@@ -214,7 +393,6 @@ class Initial < ActiveRecord::Migration[4.2]
     t.index ["phone"], name: "index_phone_numbers_on_phone"
   end
 
-  #?
   create_table "role_permissions", id: :serial, force: :cascade do |t|
     t.integer "role_id", null: false
     t.integer "permission_id", null: false
@@ -222,7 +400,6 @@ class Initial < ActiveRecord::Migration[4.2]
     t.index ["role_id"], name: "index_role_permissions_on_role_id"
   end
 
-  #?
   create_table "roles", id: :serial, force: :cascade do |t|
     t.integer "role_id"
     t.text "description"
