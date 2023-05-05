@@ -4,21 +4,27 @@ module IdentityTijuana
     def self.export_member(member_id)
       member = Member.find(member_id)
       return if member.ghosting_started?
-      ext_id = MemberExternalId.find_by(system: 'tijuana', member: member)
-      user_id = ext_id.external_id if ext_id.present?
-      if user_id.present?
-        user = User.find_by(id: user_id)
+      ext_ids = MemberExternalId.where(system: 'tijuana', member: member).to_a
+      ext_ids.select do |ext_id| # Destroy any dangling external ID references.
+        user = User.find_by(id: ext_id.external_id.to_i)
         ext_id.destroy if user.blank?
+        user.present?
       end
-      if user.blank?
-        sync_type = :merge
-        email = member.email
-        user = User.find_by(email: email) if email.present?
-        sync_type = :create if user.blank?
-      else
+      if ext_ids.count == 0
+        user = User.find_by(email: member.email) if member.email.present?
+        sync_type = user.present? ? :merge : :create
+      elsif ext_ids.count == 1
+        ext_id = ext_ids.first
+        user = User.find_by(id: ext_id.external_id.to_i)
         sync_type = :update
+      else
+        # Multiple TJ users pointing to the same ID member are problematic.
+        # The difficulty lies in identifying which one is the primary match,
+        # because the email address is mutable.
+        primary_match = find_primary_match_for_member(member, ext_ids)
+        # Only the primary match gets synced, others are ignored.
+        return if primary_match.present? && user&.id != primary_match.id
       end
-
       sync(user, member, sync_type)
     end
 
@@ -26,29 +32,39 @@ module IdentityTijuana
     def self.import_user(user_id)
       user = User.find(user_id)
       member = Member.find_by_external_id(:tijuana, user_id)
-
       if member.blank?
-        sync_type = :merge
         cleansed_email = Cleanser.cleanse_email(user.email)
-        cleansed_email = nil unless Cleanser.accept_email?(cleansed_email)
         member = Member.find_by(email: cleansed_email) if cleansed_email.present?
+        sync_type = member.present? ? :merge : :create
       else
         sync_type = :update
       end
-
-      if member.blank?
-        sync_type = :create
-      else
+      if member.present?
         if member.ghosting_started?
           Rails.logger.warn "Tijuana member (#{user.id}) is ghosted (#{member.id}), not updating"
           return
         end
+        primary_match = find_primary_match_for_member(member)
+        if primary_match.present? && user.id != primary_match.id
+          # Only the primary match gets synced. Others get linked (if they aren't already), but not synced.
+          MemberExternalId.find_or_create_by(system: 'tijuana', member: member, external_id: user.id.to_s)
+          return
+        end
       end
-
       sync(user, member, sync_type)
     end
 
     private
+
+    # Find the primary TJ user match for a given ID member.
+    def self.find_primary_match_for_member(member, ext_ids=nil)
+      ext_ids = MemberExternalId.where(system: 'tijuana', member: member).to_a if ext_ids.nil?
+      return nil if ext_ids.count == 0
+      user_ids = ext_ids.map { |ext_id| ext_id.external_id.to_i }
+      users = User.where(id: user_ids).order(:created_at)
+      subscribed_users = users.select { |user| user.is_member }
+      (subscribed_users.count > 0) ? subscribed_users.first : users.first
+    end
 
     # Parameters for searching the active_record_audits table.
     AUDIT_SEARCH_PARAMS = {
@@ -220,31 +236,13 @@ module IdentityTijuana
       )
 
       # Compare email address.
-      abort_sync = false
       compare_fields(
         sync_type, [ member&.email ], [ user&.email ],
         Proc.new { get_id_change_date(member, :email, member&.updated_at) },
         Proc.new { user_updated_at },
         Proc.new { member_hash[:emails] = [{email: user.email}] },
-        Proc.new {
-          existing_user_with_same_email = User.find_by(email: member.email)
-          if existing_user_with_same_email.present?
-            # We can't update the email in TJ if another user already exists
-            # with that email address. In that scenario, the current user
-            # needs to be unlinked from the member, and we need to ensure
-            # that the other user is linked instead.
-            MemberExternalId.where(
-              member: member,
-              system: 'tijuana',
-              external_id: user.id.to_s
-            ).destroy_all
-            abort_sync = true
-          else
-            tj_changes[:email] = member.email
-          end
-        }
+        Proc.new { tj_changes[:email] = member.email }
       )
-      return if abort_sync
 
       # Compare mobile number.
       id_mobile = member&.phone_numbers&.mobile&.first
@@ -423,7 +421,21 @@ module IdentityTijuana
           member_hash[:lastname] = member&.last_name unless member_hash.key?(:lastname) # Required param
           member_hash[:external_ids] = { tijuana: user&.id } # Needed for lookup
           member_hash[:emails] = [{email: user&.email}] if sync_type == :merge # Needed for lookup
+          member_hash[:apply_email_address_changes] = true # Ensure email address changes are honored
           member_hash[:ignore_phone_number_match] = true # Don't match by phone number, too error-prone
+
+          if member_hash.key?(:emails)
+            email = member_hash[:emails][0][:email]
+            members_with_email = Member.where(email: email)
+            members_with_email.each do |member_with_email|
+              if member_with_email&.id != member&.id
+                new_email = "ID#{member_with_email.id}+#{member_with_email.email}"
+                Rails.logger.warn("Member #{member_with_email.id} already has email address #{email}, changing it to #{new_email}")
+                member_with_email.email = new_email
+                member_with_email.save(touch: false)
+              end
+            end
+          end
 
           new_member = UpsertMember.call(
             member_hash,
@@ -466,6 +478,13 @@ module IdentityTijuana
               Rails.logger.warn("Member #{member&.id}, cannot erase the email address of an existing TJ user")
               next
             else
+              user_with_email = User.find_by(email: value)
+              if user_with_email.present? && user_with_email.id != user.id
+                new_email = "TJ#{existing_user_with_email.id}+#{value}"
+                Rails.logger.warn("User #{user_with_email.id} already has email address #{value}, changing it to #{new_email}")
+                user_with_email.email = new_email
+                user_with_email.save(touch: false)
+              end
               user.write_attribute(key, value)
             end
           when :postcode
