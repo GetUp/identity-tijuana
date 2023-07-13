@@ -1,7 +1,6 @@
 describe IdentityTijuana::TijuanaMemberSyncPushSerializer do
   context 'serialize' do
     before(:each) do
-      clean_external_database
       allow(Settings).to receive_message_chain(:tijuana).and_return( {} )
       @member = FactoryBot.create(:member)
       list = FactoryBot.create(:list)

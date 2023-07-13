@@ -31,19 +31,8 @@ module ExternalDatabaseHelpers
     end
 
     def clean
-      PhoneNumber.all.destroy_all
-      ListMember.all.destroy_all
-      List.all.destroy_all
-      Member.all.destroy_all
-      MemberSubscription.all.destroy_all
-      Subscription.all.destroy_all
-      Contact.all.destroy_all
-      ContactCampaign.all.destroy_all
-      ContactResponseKey.all.destroy_all
-      ContactResponse.all.destroy_all
-      CustomField.all.destroy_all
-      CustomFieldKey.all.destroy_all
-      Search.all.destroy_all
+      IdentityTijuana::Unsubscribe.all.destroy_all
+      IdentityTijuana::UserActivityEvent.all.destroy_all
       IdentityTijuana::User.all.destroy_all
       IdentityTijuana::Tagging.all.destroy_all
       IdentityTijuana::Tag.all.destroy_all

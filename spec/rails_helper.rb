@@ -56,27 +56,15 @@ RSpec.configure do |config|
   config.fixture_path = "#{Rails.root}/spec/fixtures"
 
   config.before(:suite) do
-    # Speed up tests by using :transaction
-    DatabaseCleaner[:active_record].strategy = :transaction
-    # And clean initially using :truncation
+    DatabaseCleaner[:active_record].strategy = :truncation
     DatabaseCleaner[:active_record].clean_with(:truncation)
-
-    # Enable redis cleaning too (:truncation is the only option)
     DatabaseCleaner[:redis].strategy = :deletion
-    # And clean initially
     DatabaseCleaner[:redis].clean
   end
 
   config.around(:each) do |example|
+    clean_external_database
     DatabaseCleaner.cleaning do
-      # Allow individual specs to do this when they need to via a method in
-      # auth_helpers, which could also run `FactoryBot.create(:member_admin)`
-      #Role.create!(description: 'Admin')
-      # Subscriptions that are assumed to exist for many tests
-      #[:email, :sms, :notification].each do |channel|
-      #  FactoryBot.create(:"#{channel}_subscription")
-      #end
-      #ActiveRecord::Base.connection.execute("ALTER SEQUENCE subscriptions_id_seq RESTART WITH 4;")
       example.run
     end
   end

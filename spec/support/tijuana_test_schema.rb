@@ -87,5 +87,49 @@ class CreateTijuanaTestDb < ActiveRecord::Migration[5.0]
       t.float    'longitude',  limit: 53
       t.float    'latitude',   limit: 53
     end
+
+    create_table "user_activity_events", force: :cascade do |t|
+      t.integer  "user_id",                  limit: 4,   null: false
+      t.string   "activity",                 limit: 64,  null: false
+      t.integer  "campaign_id",              limit: 4
+      t.integer  "page_sequence_id",         limit: 4
+      t.integer  "page_id",                  limit: 4
+      t.integer  "content_module_id",        limit: 4
+      t.string   "content_module_type",      limit: 64
+      t.integer  "user_response_id",         limit: 4
+      t.string   "user_response_type",       limit: 64
+      t.string   "public_stream_html",       limit: 255
+      t.datetime "created_at",                           null: false
+      t.datetime "updated_at",                           null: false
+      t.integer  "donation_amount_in_cents", limit: 4
+      t.string   "donation_frequency",       limit: 255
+      t.integer  "email_id",                 limit: 4
+      t.integer  "push_id",                  limit: 4
+      t.integer  "get_together_event_id",    limit: 4
+      t.string   "source",                   limit: 10
+      t.integer  "acquisition_source_id",    limit: 4
+    end
+
+    add_index "user_activity_events", ["acquisition_source_id"], name: "index_user_activity_events_on_acquisition_source_id", using: :btree
+    add_index "user_activity_events", ["activity"], name: "activities_activity_idx", using: :btree
+    add_index "user_activity_events", ["campaign_id"], name: "index_user_activity_events_on_campaign_id", using: :btree
+    add_index "user_activity_events", ["content_module_id"], name: "index_user_activity_events_on_content_module_id", using: :btree
+    add_index "user_activity_events", ["created_at"], name: "index_user_activity_events_on_created_at", using: :btree
+    add_index "user_activity_events", ["email_id"], name: "activities_email_id_idx", using: :btree
+    add_index "user_activity_events", ["page_id"], name: "activities_page_id_idx", using: :btree
+    add_index "user_activity_events", ["updated_at"], name: "user_activity_events_updated_at_idx", using: :btree
+    add_index "user_activity_events", ["user_id"], name: "activities_user_id_idx", using: :btree
+
+    create_table "unsubscribes", force: :cascade do |t|
+      t.integer  "user_id",       limit: 4
+      t.integer  "email_id",      limit: 4
+      t.string   "reason",        limit: 255
+      t.text     "specifics",     limit: 65535
+      t.boolean  "community_run"
+      t.datetime "created_at"
+    end
+
+    add_index "unsubscribes", ["created_at"], name: "index_unsubscribes_on_created_at", using: :btree
+    add_index "unsubscribes", ["user_id"], name: "index_unsubscribes_on_user_id", using: :btree
   end
 end
