@@ -27,7 +27,33 @@ class Initial < ActiveRecord::Migration[4.2]
     t.index ["request_uuid"], name: "index_active_record_audits_on_request_uuid"
     t.index ["user_id", "user_type"], name: "user_index"
   end
-  
+
+  create_table "campaigns", force: :cascade do |t|
+    t.text "name"
+    t.datetime "created_at", precision: nil
+    t.datetime "updated_at", precision: nil
+    t.integer "issue_id"
+    t.text "description"
+    t.integer "author_id"
+    t.integer "controlshift_campaign_id"
+    t.text "campaign_type"
+    t.float "latitude"
+    t.float "longitude"
+    t.text "location"
+    t.text "image"
+    t.text "url"
+    t.text "slug"
+    t.text "moderation_status"
+    t.datetime "finished_at", precision: nil
+    t.string "target_type"
+    t.string "outcome"
+    t.string "languages", default: [], array: true
+    t.string "external_id"
+    t.string "external_source"
+    t.index ["author_id"], name: "index_campaigns_on_author_id"
+    t.index ["issue_id"], name: "index_campaigns_on_issue_id"
+  end
+
   create_table "contact_campaigns", id: :serial, force: :cascade do |t|
     t.text "name"
     t.integer "external_id"
@@ -76,7 +102,6 @@ class Initial < ActiveRecord::Migration[4.2]
     t.index ["external_id"], name: "index_contacts_on_external_id"
   end
 
-  #??
   create_table "delayed_jobs", force: :cascade do |t|
     t.integer "priority", default: 0
     t.integer "attempts", default: 0
@@ -89,6 +114,30 @@ class Initial < ActiveRecord::Migration[4.2]
     t.string "queue"
     t.datetime "created_at"
     t.datetime "updated_at"
+  end
+
+  create_table "issue_categories", id: :serial, force: :cascade do |t|
+    t.text "name"
+    t.datetime "created_at", precision: nil
+    t.datetime "updated_at", precision: nil
+  end
+
+  create_table "issue_categories_issues", id: :serial, force: :cascade do |t|
+    t.integer "issue_id", null: false
+    t.integer "issue_category_id", null: false
+    t.datetime "created_at", precision: nil
+    t.datetime "updated_at", precision: nil
+    t.index ["issue_category_id"], name: "index_issue_categories_issues_on_issue_category_id"
+    t.index ["issue_id"], name: "index_issue_categories_issues_on_issue_id"
+  end
+
+  create_table "issues", id: :serial, force: :cascade do |t|
+    t.text "name"
+    t.datetime "created_at", precision: nil
+    t.datetime "updated_at", precision: nil
+    t.boolean "default"
+    t.string "external_id"
+    t.string "external_source"
   end
 
   create_table "list_members", id: :serial, force: :cascade do |t|
@@ -113,7 +162,6 @@ class Initial < ActiveRecord::Migration[4.2]
     t.index ["synced_to_redshift"], name: "index_lists_on_synced_to_redshift"
   end
 
-  #??
   create_table "member_external_ids", id: :serial, force: :cascade do |t|
     t.integer "member_id", null: false
     t.string "system", null: false
@@ -178,7 +226,6 @@ class Initial < ActiveRecord::Migration[4.2]
     t.index ["role_id"], name: "index_members_on_role_id"
   end
 
-  #?
   create_table "organisation_memberships", force: :cascade do |t|
     t.integer "member_id", null: false
     t.integer "organisation_id", null: false
@@ -189,7 +236,6 @@ class Initial < ActiveRecord::Migration[4.2]
     t.index ["organisation_id"], name: "index_organisation_memberships_on_organisation_id"
   end
 
-  #?
   create_table "organisations", force: :cascade do |t|
     t.text "name"
     t.text "notes"
@@ -197,7 +243,6 @@ class Initial < ActiveRecord::Migration[4.2]
     t.datetime "updated_at"
   end
 
-  #?
   create_table "permissions", id: :serial, force: :cascade do |t|
     t.text "permission_slug"
     t.datetime "created_at"
@@ -214,7 +259,6 @@ class Initial < ActiveRecord::Migration[4.2]
     t.index ["phone"], name: "index_phone_numbers_on_phone"
   end
 
-  #?
   create_table "role_permissions", id: :serial, force: :cascade do |t|
     t.integer "role_id", null: false
     t.integer "permission_id", null: false
@@ -222,7 +266,6 @@ class Initial < ActiveRecord::Migration[4.2]
     t.index ["role_id"], name: "index_role_permissions_on_role_id"
   end
 
-  #?
   create_table "roles", id: :serial, force: :cascade do |t|
     t.integer "role_id"
     t.text "description"

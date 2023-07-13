@@ -27,6 +27,45 @@ describe IdentityTijuana do
     end
   end
 
+  context '#fetch_campaign_updates' do
+    context 'TJ campaign/ID issue handling' do
+      before do
+        @tj_campaign_1 = IdentityTijuana::Campaign.create(name: 'Campaign 1')
+        @tj_campaign_2 = IdentityTijuana::Campaign.create(name: 'Campaign 2')
+      end
+
+      it 'creates TJ campaigns as issues in Identity' do
+        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+        expect(Issue.count).to eq(2)
+      end
+
+      it 'updates changed TJ campaigns in Identity' do
+        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+        expect(Issue.find_by(external_id: @tj_campaign_1.id, external_source: 'tijuana').name).to eq('Campaign 1')
+        @tj_campaign_1.name = 'Campaign 1 changed'
+        @tj_campaign_1.save!
+        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+        expect(Issue.find_by(external_id: @tj_campaign_1.id, external_source: 'tijuana').name).to eq('Campaign 1 changed')
+      end
+
+      it 'doesnt create deleted TJ campaigns as issues in Identity' do
+        @tj_campaign_2.deleted_at = DateTime.now.utc
+        @tj_campaign_2.save!
+        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+        expect(Issue.count).to eq(1)
+      end
+
+      it 'removes deleted TJ campaigns from Identity' do
+        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+        expect(Issue.count).to eq(2)
+        @tj_campaign_2.deleted_at = DateTime.now.utc
+        @tj_campaign_2.save!
+        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
+        expect(Issue.count).to eq(1)
+      end
+    end
+  end
+
   context '#fetch_user_updates' do
     before(:each) do
       @email_sub = FactoryBot.create(:email_subscription)

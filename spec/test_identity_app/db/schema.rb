@@ -88,6 +88,32 @@ ActiveRecord::Schema[7.0].define(version: 0) do
     t.text "representative_gender"
   end
 
+  create_table "campaigns", force: :cascade do |t|
+    t.text "name"
+    t.datetime "created_at", precision: nil
+    t.datetime "updated_at", precision: nil
+    t.integer "issue_id"
+    t.text "description"
+    t.integer "author_id"
+    t.integer "controlshift_campaign_id"
+    t.text "campaign_type"
+    t.float "latitude"
+    t.float "longitude"
+    t.text "location"
+    t.text "image"
+    t.text "url"
+    t.text "slug"
+    t.text "moderation_status"
+    t.datetime "finished_at", precision: nil
+    t.string "target_type"
+    t.string "outcome"
+    t.string "languages", default: [], array: true
+    t.string "external_id"
+    t.string "external_source"
+    t.index ["author_id"], name: "index_campaigns_on_author_id"
+    t.index ["issue_id"], name: "index_campaigns_on_issue_id"
+  end
+
   create_table "canonical_addresses", id: :serial, force: :cascade do |t|
     t.string "official_id"
     t.text "line1"
@@ -186,6 +212,30 @@ ActiveRecord::Schema[7.0].define(version: 0) do
     t.string "queue"
     t.datetime "created_at"
     t.datetime "updated_at"
+  end
+
+  create_table "issue_categories", id: :serial, force: :cascade do |t|
+    t.text "name"
+    t.datetime "created_at", precision: nil
+    t.datetime "updated_at", precision: nil
+  end
+
+  create_table "issue_categories_issues", id: :serial, force: :cascade do |t|
+    t.integer "issue_id", null: false
+    t.integer "issue_category_id", null: false
+    t.datetime "created_at", precision: nil
+    t.datetime "updated_at", precision: nil
+    t.index ["issue_category_id"], name: "index_issue_categories_issues_on_issue_category_id"
+    t.index ["issue_id"], name: "index_issue_categories_issues_on_issue_id"
+  end
+
+  create_table "issues", id: :serial, force: :cascade do |t|
+    t.text "name"
+    t.datetime "created_at", precision: nil
+    t.datetime "updated_at", precision: nil
+    t.boolean "default"
+    t.string "external_id"
+    t.string "external_source"
   end
 
   create_table "list_members", id: :serial, force: :cascade do |t|

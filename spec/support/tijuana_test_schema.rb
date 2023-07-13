@@ -1,5 +1,29 @@
 class CreateTijuanaTestDb < ActiveRecord::Migration[5.0]
   def up
+    create_table "campaigns", force: :cascade do |t|
+      t.string   "name",                  limit: 64
+      t.text     "description",           limit: 65535
+      t.datetime "created_at",                                          null: false
+      t.datetime "updated_at",                                          null: false
+      t.datetime "deleted_at"
+      t.string   "created_by",            limit: 255
+      t.string   "updated_by",            limit: 255
+      t.integer  "alternate_key",         limit: 4
+      t.boolean  "opt_out",                             default: true
+      t.integer  "theme_id",              limit: 4,     default: 1,     null: false
+      t.string   "slug",                  limit: 255
+      t.string   "accounts_key",          limit: 255
+      t.boolean  "quarantined"
+      t.boolean  "hidden_in_admin",                     default: false
+      t.string   "default_email_name",    limit: 255
+      t.string   "default_email_address", limit: 255
+      t.string   "default_email_reply",   limit: 255
+    end
+
+    add_index "campaigns", ["accounts_key"], name: "index_campaigns_on_accounts_key", using: :btree
+    add_index "campaigns", ["slug"], name: "index_campaigns_on_slug", using: :btree
+    add_index "campaigns", ["updated_at"], name: "index_campaigns_on_updated_at", using: :btree
+
     create_table 'tags', force: :cascade do |t|
       t.string  'name',           limit: 255
       t.integer 'taggings_count', limit: 4, default: 0

@@ -1,12 +1,19 @@
 require "identity_tijuana/engine"
+require "identity_tijuana/campaign_helper"
+require "identity_tijuana/mutex_helper"
+require "identity_tijuana/redis_helper"
 
 module IdentityTijuana
   SYSTEM_NAME = 'tijuana'
   SYNCING = 'tag'
   CONTACT_TYPE = 'email'
-  PULL_JOBS = [[:fetch_user_updates, 10.minutes]]
+  PULL_JOBS = [[:fetch_campaign_updates, 10.minutes], [:fetch_user_updates, 10.minutes]]
   MEMBER_RECORD_DATA_TYPE='object'
   MUTEX_EXPIRY_DURATION = 10.minutes
+
+  include CampaignHelper
+  include MutexHelper
+  include RedisHelper
 
   def self.push(sync_id, member_ids, external_system_params)
     begin
@@ -56,33 +63,20 @@ module IdentityTijuana
   def self.pull(sync_id, external_system_params)
     begin
       pull_job = JSON.parse(external_system_params)['pull_job'].to_s
-      self.send(pull_job, sync_id) do |records_for_import_count, records_for_import, records_for_import_scope, pull_deferred|
-        yield records_for_import_count, records_for_import, records_for_import_scope, pull_deferred
-      end
-    rescue => e
-      raise e
-    end
-  end
-
-  def self.fetch_user_updates(sync_id)
-    begin
-      mutex_acquired = acquire_mutex_lock(__method__.to_s, sync_id)
+      mutex_acquired = acquire_mutex_lock(pull_job, sync_id)
       unless mutex_acquired
         yield 0, {}, {}, true
         return
       end
-      need_another_batch = fetch_user_updates_impl(sync_id) do |records_for_import_count, records_for_import, records_for_import_scope, pull_deferred|
+      self.send(pull_job, sync_id) do |records_for_import_count, records_for_import, records_for_import_scope, pull_deferred|
         yield records_for_import_count, records_for_import, records_for_import_scope, pull_deferred
       end
     ensure
-      release_mutex_lock(__method__.to_s) if mutex_acquired
+      release_mutex_lock(pull_job) if mutex_acquired  # Check to make sure that mutex lock is always released.
     end
-    schedule_pull_batch(:fetch_user_updates) if need_another_batch
-    schedule_pull_batch(:fetch_tagging_updates)
-    schedule_pull_batch(:fetch_donation_updates)
   end
 
-  def self.fetch_user_updates_impl(sync_id)
+  def self.fetch_user_updates(sync_id)
     started_at = DateTime.now
     last_updated_at = get_redis_date('tijuana:users:last_updated_at')
     last_id = (Sidekiq.redis { |r| r.get 'tijuana:users:last_id' } || 0).to_i
@@ -100,29 +94,30 @@ module IdentityTijuana
     updated_member_ids = Member.connection.execute(<<~SQL
         SELECT id as member_id
         FROM members
-        WHERE updated_at > '#{last_updated_at}'
-        AND updated_at <= '#{users_dependent_data_cutoff}'
-        UNION
-        SELECT DISTINCT member_id
-        FROM addresses
-        WHERE updated_at > '#{last_updated_at}'
-        AND updated_at <= '#{users_dependent_data_cutoff}'
-        UNION
-        SELECT distinct member_id
-        FROM custom_fields
-        WHERE updated_at > '#{last_updated_at}'
-        AND updated_at <= '#{users_dependent_data_cutoff}'
-        UNION
-        SELECT DISTINCT member_id
-        FROM member_subscriptions
-        WHERE updated_at > '#{last_updated_at}'
-        AND updated_at <= '#{users_dependent_data_cutoff}'
-        UNION
-        SELECT DISTINCT member_id
-        FROM phone_numbers
-        WHERE updated_at > '#{last_updated_at}'
-        AND updated_at <= '#{users_dependent_data_cutoff}'
-        ORDER BY member_id;
+        WHERE (updated_at > '#{last_updated_at}'
+        AND updated_at <= '#{users_dependent_data_cutoff}')
+        OR id IN (
+          SELECT DISTINCT member_id
+          FROM addresses
+          WHERE updated_at > '#{last_updated_at}'
+          AND updated_at <= '#{users_dependent_data_cutoff}'
+          UNION
+          SELECT distinct member_id
+          FROM custom_fields
+          WHERE updated_at > '#{last_updated_at}'
+          AND updated_at <= '#{users_dependent_data_cutoff}'
+          UNION
+          SELECT DISTINCT member_id
+          FROM member_subscriptions
+          WHERE updated_at > '#{last_updated_at}'
+          AND updated_at <= '#{users_dependent_data_cutoff}'
+          UNION
+          SELECT DISTINCT member_id
+          FROM phone_numbers
+          WHERE updated_at > '#{last_updated_at}'
+          AND updated_at <= '#{users_dependent_data_cutoff}'
+          ORDER BY member_id
+        );
       SQL
     ).map {|member_id_row| member_id_row['member_id']}
 
@@ -154,7 +149,11 @@ module IdentityTijuana
       false
     )
 
-    updated_users.count < updated_users_all.count
+    release_mutex_lock(:fetch_user_updates)
+    need_another_batch = updated_users.count < updated_users_all.count
+    schedule_pull_batch(:fetch_user_updates) if need_another_batch
+    schedule_pull_batch(:fetch_tagging_updates)
+    schedule_pull_batch(:fetch_donation_updates)
   end
 
   def self.fetch_users_for_dedupe
@@ -173,22 +172,6 @@ module IdentityTijuana
   end
 
   def self.fetch_donation_updates(sync_id)
-    begin
-      mutex_acquired = acquire_mutex_lock(__method__.to_s, sync_id)
-      unless mutex_acquired
-        yield 0, {}, {}, true
-        return
-      end
-      need_another_batch = fetch_donation_updates_impl(sync_id) do |records_for_import_count, records_for_import, records_for_import_scope, pull_deferred|
-        yield records_for_import_count, records_for_import, records_for_import_scope, pull_deferred
-      end
-    ensure
-      release_mutex_lock(__method__.to_s) if mutex_acquired
-    end
-    schedule_pull_batch(:fetch_donation_updates) if need_another_batch
-  end
-
-  def self.fetch_donation_updates_impl(sync_id)
     started_at = DateTime.now
     last_updated_at = get_redis_date('tijuana:donations:last_updated_at')
     last_id = (Sidekiq.redis { |r| r.get 'tijuana:donations:last_id' } || 0).to_i
@@ -221,26 +204,12 @@ module IdentityTijuana
         false
     )
 
-    updated_donations.count < updated_donations_all.count
+    release_mutex_lock(:fetch_donation_updates)
+    need_another_batch = updated_donations.count < updated_donations_all.count
+    schedule_pull_batch(:fetch_donation_updates) if need_another_batch
   end
 
   def self.fetch_tagging_updates(sync_id)
-    begin
-      mutex_acquired = acquire_mutex_lock(__method__.to_s, sync_id)
-      unless mutex_acquired
-        yield 0, {}, {}, true
-        return
-      end
-      need_another_batch = fetch_tagging_updates_impl(sync_id) do |records_for_import_count, records_for_import, records_for_import_scope, pull_deferred|
-        yield records_for_import_count, records_for_import, records_for_import_scope, pull_deferred
-      end
-    ensure
-      release_mutex_lock(__method__.to_s) if mutex_acquired
-    end
-    schedule_pull_batch(:fetch_tagging_updates) if need_another_batch
-  end
-
-  def self.fetch_tagging_updates_impl(sync_id)
     latest_tagging_scope_limit = 50000
     started_at = DateTime.now
     last_id = (Sidekiq.redis { |r| r.get 'tijuana:taggings:last_id' } || 0).to_i
@@ -369,49 +338,12 @@ module IdentityTijuana
       false
     )
 
-    results.count < tags_remaining_count
+    release_mutex_lock(:fetch_tagging_updates)
+    need_another_batch = results.count < tags_remaining_count
+    schedule_pull_batch(:fetch_tagging_updates) if need_another_batch
   end
 
   private
-
-  def self.acquire_mutex_lock(method_name, sync_id)
-    mutex_name = "#{SYSTEM_NAME}:mutex:#{method_name}"
-    new_mutex_expiry = DateTime.now + MUTEX_EXPIRY_DURATION
-    mutex_acquired = set_redis_date(mutex_name, new_mutex_expiry, true)
-    unless mutex_acquired
-      mutex_expiry = get_redis_date(mutex_name)
-      if mutex_expiry.past?
-        unless worker_currently_running?(method_name, sync_id)
-          delete_redis_date(mutex_name)
-          mutex_acquired = set_redis_date(mutex_name, new_mutex_expiry, true)
-        end
-      end
-    end
-    mutex_acquired
-  end
-
-  def self.release_mutex_lock(method_name)
-    mutex_name = "#{SYSTEM_NAME}:mutex:#{method_name}"
-    delete_redis_date(mutex_name)
-  end
-
-  def self.get_redis_date(redis_identifier, default_value=Time.at(0))
-    date_str = Sidekiq.redis { |r| r.get redis_identifier }
-    date_str ? Time.parse(date_str) : default_value
-  end
-
-  def self.set_redis_date(redis_identifier, date_time_value, as_mutex=false)
-    date_str = date_time_value.utc.to_fs(:inspect) # Ensures fractional seconds are retained
-    if as_mutex
-      Sidekiq.redis { |r| r.setnx redis_identifier, date_str }
-    else
-      Sidekiq.redis { |r| r.set redis_identifier, date_str }
-    end
-  end
-
-  def self.delete_redis_date(redis_identifier)
-    Sidekiq.redis { |r| r.del redis_identifier }
-  end
 
   def self.schedule_pull_batch(pull_job)
     sync = Sync.create!(
