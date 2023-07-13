@@ -31,6 +31,8 @@ module ExternalDatabaseHelpers
     end
 
     def clean
+      IdentityTijuana::Unsubscribe.all.destroy_all
+      IdentityTijuana::UserActivityEvent.all.destroy_all
       IdentityTijuana::User.all.destroy_all
       IdentityTijuana::Tagging.all.destroy_all
       IdentityTijuana::Tag.all.destroy_all
