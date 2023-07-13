@@ -461,6 +461,10 @@ describe IdentityTijuana do
         new_first_name = Faker::Name.first_name
         new_last_name = Faker::Name.last_name
         new_email = Faker::Internet.email
+        # XXX syncing email changes from TJ to Id was disabled as of
+        # e133c1d06fda1ee025a8242bc39692b3fa52ee54, so add this to
+        # keep the test working otherwise for now:
+        new_email = u.email
         new_home_number = "612#{::Kernel.rand(10_000_000..99_999_999)}"
         new_mobile_number = "614#{::Kernel.rand(10_000_000..99_999_999)}"
         new_street_address = Faker::Address.street_address
