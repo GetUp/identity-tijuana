@@ -19,34 +19,6 @@ ActiveRecord::Schema.define(version: 0) do
   enable_extension "pg_trgm"
   enable_extension "plpgsql"
 
-  create_table "actions", force: :cascade do |t|
-    t.text "name"
-    t.text "action_type"
-    t.text "technical_type"
-    t.string "external_id"
-    t.integer "old_action_id"
-    t.datetime "created_at"
-    t.datetime "updated_at"
-    t.integer "campaign_id"
-    t.text "description"
-    t.text "status"
-    t.string "public_name"
-    t.string "language"
-    t.string "external_source"
-    t.index ["campaign_id"], name: "index_actions_on_campaign_id"
-    t.index ["external_id", "technical_type", "language"], name: "index_actions_on_external_id_and_technical_type_and_language", unique: true
-    t.index ["old_action_id"], name: "index_actions_on_old_action_id"
-  end
-
-  create_table "actions_mailings", force: :cascade do |t|
-    t.integer "mailing_id", null: false
-    t.integer "action_id", null: false
-    t.datetime "created_at"
-    t.datetime "updated_at"
-    t.index ["action_id"], name: "index_actions_mailings_on_action_id"
-    t.index ["mailing_id"], name: "index_actions_mailings_on_mailing_id"
-  end
-
   create_table "active_record_audits", id: :serial, force: :cascade do |t|
     t.integer "auditable_id"
     t.string "auditable_type"
@@ -295,104 +267,6 @@ ActiveRecord::Schema.define(version: 0) do
     t.datetime "created_at"
     t.datetime "updated_at"
     t.index ["mailing_test_id"], name: "index_mailing_test_cases_on_mailing_test_id"
-  end
-
-  create_table "mailing_tests", id: :serial, force: :cascade do |t|
-    t.text "name"
-    t.text "test_type"
-    t.text "tags"
-    t.text "description"
-    t.text "merge_tag"
-    t.integer "mailing_id", null: false
-    t.datetime "created_at"
-    t.datetime "updated_at"
-    t.index ["mailing_id"], name: "index_mailing_tests_on_mailing_id"
-  end
-
-  create_table "mailing_variation_test_cases", id: :serial, force: :cascade do |t|
-    t.integer "mailing_variation_id", null: false
-    t.integer "mailing_test_case_id", null: false
-    t.index ["mailing_test_case_id"], name: "index_mailing_variation_test_cases_on_mailing_test_case_id"
-    t.index ["mailing_variation_id"], name: "index_mailing_variation_test_cases_on_mailing_variation_id"
-  end
-
-  create_table "mailing_variations", id: :serial, force: :cascade do |t|
-    t.integer "mailing_id", null: false
-    t.datetime "created_at"
-    t.datetime "updated_at"
-    t.integer "total_opens", default: 0, null: false
-    t.integer "total_clicks", default: 0, null: false
-    t.integer "total_members", default: 0, null: false
-    t.integer "total_actions", default: 0, null: false
-    t.decimal "donate_amount", precision: 10, scale: 2, default: "0.0"
-    t.integer "donate_count", default: 0, null: false
-    t.decimal "reg_donate_amount", precision: 10, scale: 2, default: "0.0"
-    t.integer "reg_donate_count", default: 0, null: false
-    t.string "external_id"
-    t.string "external_source"
-    t.index ["mailing_id"], name: "index_mailing_variations_on_mailing_id"
-  end
-
-  create_table "mailings", force: :cascade do |t|
-    t.integer "external_id"
-    t.text "name"
-    t.text "subject"
-    t.text "body_html"
-    t.text "body_plain"
-    t.text "from"
-    t.datetime "created_at"
-    t.datetime "updated_at"
-    t.boolean "recipients_synced"
-    t.integer "member_count"
-    t.text "parsed_html"
-    t.integer "mailing_template_id"
-    t.integer "list_id"
-    t.float "send_time"
-    t.datetime "prepared_send_at"
-    t.integer "total_opens", default: 0
-    t.integer "total_clicks", default: 0
-    t.text "from_name"
-    t.text "from_email"
-    t.integer "total_spam_reports", default: 0
-    t.integer "total_bounces", default: 0
-    t.datetime "finished_sending_at"
-    t.integer "total_unsubscribes", default: 0
-    t.datetime "scheduled_for"
-    t.boolean "priority"
-    t.integer "processed_count"
-    t.boolean "aborted", default: false
-    t.boolean "recurring", default: false
-    t.integer "recurring_max_recipients_per_send"
-    t.integer "search_id"
-    t.integer "parent_mailing_id"
-    t.text "body_markdown"
-    t.text "recurring_schedule"
-    t.time "recurring_at"
-    t.integer "recurring_day"
-    t.datetime "recurring_last_run_started"
-    t.boolean "paused", default: false
-    t.boolean "is_controlled_externally", default: false, null: false
-    t.string "external_slug"
-    t.integer "total_actions", default: 0, null: false
-    t.decimal "total_donate_amount", precision: 10, scale: 2, default: "0.0"
-    t.integer "total_donate_count", default: 0, null: false
-    t.decimal "total_reg_donate_amount", precision: 10, scale: 2, default: "0.0"
-    t.integer "total_reg_donate_count", default: 0, null: false
-    t.datetime "started_send_at"
-    t.integer "cloned_mailing_id"
-    t.integer "prepared_count", default: 0, null: false
-    t.text "reply_to"
-    t.boolean "quiet_send", default: false, null: false
-    t.text "renderer", default: "liquid", null: false
-    t.text "archived_subject"
-    t.text "archived_body"
-    t.integer "campaign_id"
-    t.string "external_source"
-    t.index ["cloned_mailing_id"], name: "index_mailings_on_cloned_mailing_id"
-    t.index ["list_id"], name: "index_mailings_on_list_id"
-    t.index ["mailing_template_id"], name: "index_mailings_on_mailing_template_id"
-    t.index ["parent_mailing_id"], name: "index_mailings_on_parent_mailing_id"
-    t.index ["recurring"], name: "index_mailings_on_recurring"
   end
 
   create_table "member_external_ids", id: :serial, force: :cascade do |t|

@@ -1,8 +1,6 @@
 module IdentityTijuana
   class Campaign < ReadWrite
     self.table_name = 'campaigns'
-    has_many :page_sequences
-    has_many :pushes
 
     scope :deleted_campaigns, -> (last_updated_at, exclude_from) {
       where('deleted_at is not null and deleted_at >= ? and deleted_at < ?', last_updated_at, exclude_from)

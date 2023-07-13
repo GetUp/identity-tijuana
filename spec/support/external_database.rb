@@ -31,8 +31,6 @@ module ExternalDatabaseHelpers
     end
 
     def clean
-      Mailings::Mailing.all.destroy_all
-      Action.all.destroy_all
       Campaign.all.destroy_all
       Issue.all.destroy_all
       IssueCategory.all.destroy_all
@@ -53,13 +51,6 @@ module ExternalDatabaseHelpers
       IdentityTijuana::Tagging.all.destroy_all
       IdentityTijuana::Tag.all.destroy_all
       IdentityTijuana::Postcode.all.destroy_all
-      IdentityTijuana::ContentModuleLink.all.destroy_all
-      IdentityTijuana::ContentModule.all.destroy_all
-      IdentityTijuana::Email.all.destroy_all
-      IdentityTijuana::Blast.all.destroy_all
-      IdentityTijuana::Push.all.destroy_all
-      IdentityTijuana::Page.all.destroy_all
-      IdentityTijuana::PageSequence.all.destroy_all
       IdentityTijuana::Campaign.all.destroy_all
     end
   end
