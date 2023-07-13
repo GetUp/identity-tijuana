@@ -37,6 +37,7 @@ module ExternalDatabaseHelpers
       IdentityTijuana::Tagging.all.destroy_all
       IdentityTijuana::Tag.all.destroy_all
       IdentityTijuana::Postcode.all.destroy_all
+      IdentityTijuana::Campaign.all.destroy_all
     end
   end
 end
