@@ -3,16 +3,8 @@ require 'rails_helper'
 describe IdentityTijuana do
 
   before(:all) do
-    Sidekiq::Testing.inline!
-  end
-
-  before do
-    clean_external_database
     @sync_id = 1
-  end
-
-  after(:all) do
-    Sidekiq::Testing.fake!
+    Sidekiq::Testing.inline!
   end
 
   def phone_numbers_are_equivalent(phone1, phone2)
@@ -24,8 +16,6 @@ describe IdentityTijuana do
 
   context '#pull' do
     before(:each) do
-      clean_external_database
-      @sync_id = 1
       @external_system_params = JSON.generate({'pull_job' => 'fetch_user_updates'})
     end
 
@@ -38,7 +28,7 @@ describe IdentityTijuana do
   end
 
   context '#fetch_user_updates' do
-    before do
+    before(:each) do
       @email_sub = FactoryBot.create(:email_subscription)
       @calling_sub = FactoryBot.create(:calling_subscription)
       @sms_sub = FactoryBot.create(:sms_subscription)
@@ -400,7 +390,7 @@ describe IdentityTijuana do
         end
       end
       context 'custom field flags' do
-        before do
+        before(:each) do
           @deceased_custom_field_key = FactoryBot.create(:custom_field_key, name: 'deceased')
           @rts_custom_field_key = FactoryBot.create(:custom_field_key, name: 'rts')
           @deceased_tag = FactoryBot.create(:tijuana_tag, name: 'deceased')
@@ -537,8 +527,8 @@ describe IdentityTijuana do
     end
   end
 
-   context '#fetch_tagging_updates' do
-    before do
+  context '#fetch_tagging_updates' do
+    before(:each) do
       reef_user = FactoryBot.create(:tijuana_user)
       econoreef_user = FactoryBot.create(:tijuana_user)
       economy_user = FactoryBot.create(:tijuana_user)

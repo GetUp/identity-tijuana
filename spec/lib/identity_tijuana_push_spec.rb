@@ -1,11 +1,20 @@
 require 'rails_helper'
 
 describe IdentityTijuana do
+  before(:all) do
+    @sync_id = 1
+  end
+
   context '#push' do
     before(:each) do
-      clean_external_database
+      @external_system_params = JSON.generate({'tag' => 'test_tag'})
 
-      @sync_id = 1
+      2.times { FactoryBot.create(:member) }
+      FactoryBot.create(:member_without_email)
+      @members = Member.all
+    end
+
+    context '#push' do
       @external_system_params = JSON.generate({'tag' => 'test_tag'})
 
       2.times { FactoryBot.create(:member) }
@@ -24,11 +33,8 @@ describe IdentityTijuana do
 
   context '#push_in_batches' do
     before(:each) do
-      clean_external_database
-
       expect_any_instance_of(IdentityTijuana::API).to receive(:tag_emails).with(anything, anything) {{ }}
 
-      @sync_id = 1
       @external_system_params = JSON.generate({'tag' => 'test_tag'})
 
       allow(Settings).to receive_message_chain("tijuana.push_batch_amount") { 10 }
@@ -57,9 +63,6 @@ describe IdentityTijuana do
 
   context 'with server errors' do
     before(:each) do
-      clean_external_database
-
-      @sync_id = 1
       @external_system_params = JSON.generate({'tag' => 'test_tag'})
 
       allow(Settings).to receive_message_chain("tijuana.push_batch_amount") { 10 }
