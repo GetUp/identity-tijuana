@@ -17,12 +17,6 @@ module IdentityTijuana
           campaigns_dependent_data_cutoff = updated_campaigns.last.updated_at if updated_campaigns.count < updated_campaigns_all.count
         end
 
-        # Erase any logically deleted campaigns from ID.
-        deleted_campaigns = IdentityTijuana::Campaign.deleted_campaigns(last_updated_at, campaigns_dependent_data_cutoff)
-        deleted_campaigns.each do |campaign|
-          campaign.erase(sync_id)
-        end
-
         unless updated_campaigns.empty?
           set_redis_date('tijuana:campaigns:last_updated_at', updated_campaigns.last.updated_at)
           Sidekiq.redis { |r| r.set 'tijuana:campaigns:last_id', updated_campaigns.last.id }

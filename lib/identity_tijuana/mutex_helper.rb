@@ -5,6 +5,8 @@ module IdentityTijuana
     include IdentityTijuana::RedisHelper
 
     module ClassMethods
+      private
+
       def acquire_mutex_lock(method_name, sync_id)
         mutex_name = "#{SYSTEM_NAME}:mutex:#{method_name}"
         new_mutex_expiry = DateTime.now + MUTEX_EXPIRY_DURATION

@@ -2,11 +2,6 @@ module IdentityTijuana
   class Campaign < ReadWrite
     self.table_name = 'campaigns'
 
-    scope :deleted_campaigns, -> (last_updated_at, exclude_from) {
-      where('deleted_at is not null and deleted_at >= ? and deleted_at < ?', last_updated_at, exclude_from)
-        .order('deleted_at, id')
-    }
-
     scope :updated_campaigns, -> (last_updated_at, last_id) {
       updated_campaigns_all(last_updated_at, last_id)
         .order('updated_at, id')
@@ -14,7 +9,7 @@ module IdentityTijuana
     }
 
     scope :updated_campaigns_all, -> (last_updated_at, last_id) {
-      where('updated_at > ? or (updated_at = ? and id > ?)', last_updated_at, last_updated_at, last_id)
+      where('deleted_at is null and updated_at > ? or (updated_at = ? and id > ?)', last_updated_at, last_updated_at, last_id)
     }
 
     def import(sync_id)
@@ -32,20 +27,6 @@ module IdentityTijuana
         end
       rescue Exception => e
         Rails.logger.error "Tijuana campaigns sync id:#{self.id}, error: #{e.message}"
-        raise
-      end
-    end
-
-    def erase(sync_id)
-      begin
-        issue = ::Issue.find_by(external_id: self.id.to_s, external_source: 'tijuana')
-        if issue.present?
-          issue.campaigns.destroy_all # TODO: Will need to cascade to other tables.
-          issue.issue_categories.clear
-          issue.destroy
-        end
-      rescue Exception => e
-        Rails.logger.error "Tijuana campaigns delete id:#{self.id}, error: #{e.message}"
         raise
       end
     end

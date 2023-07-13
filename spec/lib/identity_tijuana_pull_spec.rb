@@ -54,15 +54,6 @@ describe IdentityTijuana do
         IdentityTijuana.fetch_campaign_updates(@sync_id) {}
         expect(Issue.count).to eq(1)
       end
-
-      it 'removes deleted TJ campaigns from Identity' do
-        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
-        expect(Issue.count).to eq(2)
-        @tj_campaign_2.deleted_at = DateTime.now.utc
-        @tj_campaign_2.save!
-        IdentityTijuana.fetch_campaign_updates(@sync_id) {}
-        expect(Issue.count).to eq(1)
-      end
     end
   end
 

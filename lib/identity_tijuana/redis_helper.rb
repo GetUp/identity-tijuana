@@ -1,6 +1,8 @@
 module IdentityTijuana
   module RedisHelper
     module ClassMethods
+      private
+
       def get_redis_date(redis_identifier, default_value=Time.at(0))
         date_str = Sidekiq.redis { |r| r.get redis_identifier }
         date_str ? Time.parse(date_str) : default_value
