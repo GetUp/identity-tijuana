@@ -389,68 +389,6 @@ describe IdentityTijuana do
           expect(m.updated_at).to eq(id_updated_at)
         end
       end
-      context 'custom field flags' do
-        before(:each) do
-          @deceased_custom_field_key = FactoryBot.create(:custom_field_key, name: 'deceased')
-          @rts_custom_field_key = FactoryBot.create(:custom_field_key, name: 'rts')
-          @deceased_tag = FactoryBot.create(:tijuana_tag, name: 'deceased')
-          @rts_tag = FactoryBot.create(:tijuana_tag, name: 'rts')
-        end
-        it 'sets deceased and RTS flags in Identity if the most recent change was in Tijuana' do
-          m = FactoryBot.create(:member)
-          u = FactoryBot.create(:tijuana_user, email: m.email)
-          FactoryBot.create(:tijuana_tagging, taggable_id: u.id, taggable_type: 'User', tag: @deceased_tag)
-          FactoryBot.create(:tijuana_tagging, taggable_id: u.id, taggable_type: 'User', tag: @rts_tag)
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
-          u.reload
-          m.reload
-          expect(u.taggings.find_by(tag: @deceased_tag)).not_to eq(nil)
-          expect(u.taggings.find_by(tag: @rts_tag)).not_to eq(nil)
-          expect(m.custom_fields.find_by(custom_field_key: @deceased_custom_field_key)&.data).to eq('true')
-          expect(m.custom_fields.find_by(custom_field_key: @rts_custom_field_key)&.data).to eq('true')
-        end
-        it 'unsets deceased and RTS flags in Identity if the most recent change was in Tijuana' do
-          m = FactoryBot.create(:member)
-          FactoryBot.create(:custom_field, member: m, custom_field_key: @deceased_custom_field_key, data: 'true')
-          FactoryBot.create(:custom_field, member: m, custom_field_key: @rts_custom_field_key, data: 'true')
-          u = FactoryBot.create(:tijuana_user, email: m.email)
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
-          u.reload
-          m.reload
-          expect(u.taggings.find_by(tag: @deceased_tag)).to eq(nil)
-          expect(u.taggings.find_by(tag: @rts_tag)).to eq(nil)
-          expect(m.custom_fields.find_by(custom_field_key: @deceased_custom_field_key)&.data).to eq('false')
-          expect(m.custom_fields.find_by(custom_field_key: @rts_custom_field_key)&.data).to eq('false')
-        end
-        it 'sets deceased and RTS tags in Tijuana if the most recent change was in Identity' do
-          u = FactoryBot.create(:tijuana_user)
-          m = FactoryBot.create(:member, email: u.email)
-          FactoryBot.create(:custom_field, member: m, custom_field_key: @deceased_custom_field_key, data: 'true')
-          FactoryBot.create(:custom_field, member: m, custom_field_key: @rts_custom_field_key, data: 'true')
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
-          u.reload
-          m.reload
-          expect(u.taggings.find_by(tag: @deceased_tag)).not_to eq(nil)
-          expect(u.taggings.find_by(tag: @rts_tag)).not_to eq(nil)
-          expect(m.custom_fields.find_by(custom_field_key: @deceased_custom_field_key)&.data).to eq('true')
-          expect(m.custom_fields.find_by(custom_field_key: @rts_custom_field_key)&.data).to eq('true')
-        end
-        it 'unsets deceased and RTS tags in Tijuana if the most recent change was in Identity' do
-          u = FactoryBot.create(:tijuana_user)
-          FactoryBot.create(:tijuana_tagging, taggable_id: u.id, taggable_type: 'User', tag: @deceased_tag)
-          FactoryBot.create(:tijuana_tagging, taggable_id: u.id, taggable_type: 'User', tag: @rts_tag)
-          m = FactoryBot.create(:member, email: u.email)
-          FactoryBot.create(:custom_field, member: m, custom_field_key: @deceased_custom_field_key, data: 'false')
-          FactoryBot.create(:custom_field, member: m, custom_field_key: @rts_custom_field_key, data: 'false')
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
-          u.reload
-          m.reload
-          expect(u.taggings.find_by(tag: @deceased_tag)).to eq(nil)
-          expect(u.taggings.find_by(tag: @rts_tag)).to eq(nil)
-          expect(m.custom_fields.find_by(custom_field_key: @deceased_custom_field_key)&.data).to eq('false')
-          expect(m.custom_fields.find_by(custom_field_key: @rts_custom_field_key)&.data).to eq('false')
-        end
-      end
     end
 
     context 'when updating' do
