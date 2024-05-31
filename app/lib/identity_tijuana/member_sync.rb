@@ -60,8 +60,6 @@ module IdentityTijuana
       email_subscription: ['associated_audits', 'MemberSubscription', %w[unsubscribed_at]],
       sms_subscription: ['associated_audits', 'MemberSubscription', %w[unsubscribed_at]],
       calling_subscription: ['associated_audits', 'Member_subscription', %w[unsubscribed_at]],
-      rts: ['associated_audits', 'CustomField', %w[data]],
-      deceased: ['associated_audits', 'CustomField', %w[data]],
     }
 
     # Use the audit log to work out the date/time a given field or set of
@@ -76,10 +74,6 @@ module IdentityTijuana
       # Check whether we have an ancillary matching field.
       ancillary_match_value = nil
       case auditable_type
-      when 'CustomField'
-        # For custom fields, need to make sure that changes relate to the
-        # correct custom field.
-        ancillary_match_value = CustomFieldKey.find_by(name: field_info_type)&.id
       when 'PhoneNumber'
         # For phone numbers, need to make sure that changes relate to the
         # correct type of phone number.
@@ -102,11 +96,6 @@ module IdentityTijuana
         # Check ancillary matching field, where required.
         if !ancillary_match_value.nil?
           case auditable_type
-          when 'CustomField'
-            audit_custom_field_key_id =
-              audit.audited_changes['custom_field_key_id'] ||
-                CustomField.find_by(id: audit.auditable_id).try(:custom_field_key_id)
-            next unless audit_custom_field_key_id == ancillary_match_value
           when 'PhoneNumber'
             phone_number_type =
               audit.audited_changes['phone_type'] ||
@@ -373,46 +362,6 @@ module IdentityTijuana
         Proc.new { tj_changes[:do_not_call] = !id_calling_subbed }
       )
 
-      # Compare "deceased" flag/tag.
-      id_deceased_field = find_custom_field(member&.id || 0, 'deceased')
-      id_deceased = id_deceased_field&.data == 'true'
-      tj_deceased = !user.nil? && user.has_tag('deceased')
-      compare_fields(
-        sync_type,
-        [ id_deceased ],
-        [ tj_deceased ],
-        Proc.new { get_id_change_date(member, :deceased, id_deceased_field&.updated_at || member&.updated_at) },
-        Proc.new { user_updated_at }, # TODO: Use taggings table updated_at?
-        Proc.new {
-          member_hash[:custom_fields] = [] unless member_hash.keys.include?(:custom_fields)
-          member_hash[:custom_fields].push({
-            name: 'deceased',
-            value: tj_deceased ? 'true' : 'false'
-          })
-        },
-        Proc.new { tj_changes[:deceased] = id_deceased }
-      )
-
-      # Compare "rts" flag/tag.
-      id_rts_field = find_custom_field(member&.id || 0, 'rts')
-      id_rts = id_rts_field&.data == 'true'
-      tj_rts = !user.nil? && user.has_tag('rts')
-      compare_fields(
-        sync_type,
-        [ id_rts ],
-        [ tj_rts ],
-        Proc.new { get_id_change_date(member, :rts, id_rts_field&.updated_at || member&.updated_at) },
-        Proc.new { user_updated_at }, # TODO: Use taggings table updated_at?
-        Proc.new {
-          member_hash[:custom_fields] = [] unless member_hash.keys.include?(:custom_fields)
-          member_hash[:custom_fields].push({
-            name: 'rts',
-            value: tj_deceased ? 'true' : 'false'
-          })
-        },
-        Proc.new { tj_changes[:rts] = id_rts }
-      )
-
       # puts "########## member_hash = #{member_hash.inspect}"
       # puts "########## tj_changes = #{tj_changes.inspect}"
 
@@ -475,13 +424,6 @@ module IdentityTijuana
             fields_updated.delete(key)
           when :country
             user.write_attribute(:country_iso, value.nil? ? nil : value[0..1])
-          when :deceased, :rts
-            tag = Tag.find_by(name: key) || Tag.create(name: key)
-            if value
-              Tagging.create(tag: tag, taggable_type: 'User', taggable_id: user.id)
-            else
-              user.taggings.where(tag: tag).destroy_all
-            end
           when :is_member
             user.write_attribute(:is_member, value)
             msg = "#{value ? 'Subscribed' : 'Unsubscribed'} via update from Identity."
@@ -512,14 +454,6 @@ module IdentityTijuana
           Rails.logger.info("TJ user #{user.id} updated from ID member #{member&.id}: #{fields_updated.join(' ')}")
         end
       end
-    end
-
-    def self.find_custom_field(member_id, key)
-      CustomField.joins(:custom_field_key).where('member_id = ? and custom_field_keys.name = ?', member_id, key).first
-    end
-
-    def self.has_tag(user, tag_name)
-      user.nil? ? false : user.tags.where(name: tag_name).first != nil
     end
 
     def self.standardise_phone_number(phone_number)

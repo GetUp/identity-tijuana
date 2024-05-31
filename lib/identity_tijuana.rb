@@ -108,11 +108,6 @@ module IdentityTijuana
         WHERE updated_at > '#{last_updated_at}'
         AND updated_at <= '#{users_dependent_data_cutoff}'
         UNION
-        SELECT distinct member_id
-        FROM custom_fields
-        WHERE updated_at > '#{last_updated_at}'
-        AND updated_at <= '#{users_dependent_data_cutoff}'
-        UNION
         SELECT DISTINCT member_id
         FROM member_subscriptions
         WHERE updated_at > '#{last_updated_at}'
