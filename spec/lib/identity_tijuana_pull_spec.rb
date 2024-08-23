@@ -46,7 +46,9 @@ describe IdentityTijuana do
     context 'when creating' do
       it 'creates new members in Identity' do
         u = FactoryBot.create(:tijuana_user_with_the_lot)
-        IdentityTijuana.fetch_user_updates(@sync_id) {}
+        IdentityTijuana.fetch_user_updates(@sync_id) {
+          # pass
+        }
         m = Member.find_by(email: u.email)
         expect(m).to have_attributes(first_name: u.first_name, last_name: u.last_name)
         expect(phone_numbers_are_equivalent(m.phone_numbers.mobile.first&.phone, u.mobile_number)).to eq(true)
@@ -57,7 +59,9 @@ describe IdentityTijuana do
       it 'creates new users in Tijuana' do
         m = FactoryBot.create(:member_with_the_lot)
         IdentityTijuana::Postcode.create!(number: m.address.postcode, state: m.address.state)
-        IdentityTijuana.fetch_user_updates(@sync_id) {}
+        IdentityTijuana.fetch_user_updates(@sync_id) {
+          # pass
+        }
         u = User.find_by(email: m.email)
         expect(u).to have_attributes(first_name: m.first_name, last_name: m.last_name)
         expect(u).to have_attributes(street_address: m.address.line1, suburb: m.address.town)
@@ -73,7 +77,9 @@ describe IdentityTijuana do
           m = FactoryBot.create(:member, email: u.email, first_name: nil, middle_names: nil, last_name: nil)
           first_name = u.first_name
           last_name = u.last_name
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          IdentityTijuana.fetch_user_updates(@sync_id) {
+            # pass
+          }
           u.reload
           m.reload
           expect(u).to have_attributes(first_name: first_name, last_name: last_name)
@@ -84,7 +90,9 @@ describe IdentityTijuana do
           u = FactoryBot.create(:tijuana_user, email: m.email, first_name: nil, last_name: nil)
           first_name = m.first_name
           last_name = m.last_name
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          IdentityTijuana.fetch_user_updates(@sync_id) {
+            # pass
+          }
           u.reload
           m.reload
           expect(u).to have_attributes(first_name: first_name, last_name: last_name)
@@ -95,7 +103,9 @@ describe IdentityTijuana do
           m = FactoryBot.create(:member, email: u.email, first_name: u.first_name, middle_names: nil, last_name: nil)
           first_name = u.first_name
           last_name = u.last_name
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          IdentityTijuana.fetch_user_updates(@sync_id) {
+            # pass
+          }
           u.reload
           m.reload
           expect(u).to have_attributes(first_name: first_name, last_name: last_name)
@@ -106,7 +116,9 @@ describe IdentityTijuana do
           u = FactoryBot.create(:tijuana_user, email: m.email, first_name: m.first_name, last_name: nil)
           first_name = m.first_name
           last_name = m.last_name
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          IdentityTijuana.fetch_user_updates(@sync_id) {
+            # pass
+          }
           u.reload
           m.reload
           expect(u).to have_attributes(first_name: first_name, last_name: last_name)
@@ -117,7 +129,9 @@ describe IdentityTijuana do
           u = FactoryBot.create(:tijuana_user, email: m.email)
           first_name = u.first_name
           last_name = u.last_name
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          IdentityTijuana.fetch_user_updates(@sync_id) {
+            # pass
+          }
           u.reload
           m.reload
           expect(u).to have_attributes(first_name: first_name, last_name: last_name)
@@ -128,7 +142,9 @@ describe IdentityTijuana do
           m = FactoryBot.create(:member, email: u.email)
           first_name = m.first_name
           last_name = m.last_name
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          IdentityTijuana.fetch_user_updates(@sync_id) {
+            # pass
+          }
           u.reload
           m.reload
           expect(u).to have_attributes(first_name: first_name, last_name: last_name)
@@ -140,7 +156,9 @@ describe IdentityTijuana do
           u = FactoryBot.create(:tijuana_user_with_mobile_number)
           m = FactoryBot.create(:member, email: u.email)
           mobile_number = u.mobile_number
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          IdentityTijuana.fetch_user_updates(@sync_id) {
+            # pass
+          }
           u.reload
           m.reload
           expect(u).to have_attributes(mobile_number: mobile_number)
@@ -150,7 +168,9 @@ describe IdentityTijuana do
           m = FactoryBot.create(:member_with_mobile)
           u = FactoryBot.create(:tijuana_user, email: m.email)
           mobile_number = m.phone_numbers.mobile.first&.phone
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          IdentityTijuana.fetch_user_updates(@sync_id) {
+            # pass
+          }
           u.reload
           m.reload
           expect(phone_numbers_are_equivalent(mobile_number, u.mobile_number)).to eq(true)
@@ -160,7 +180,9 @@ describe IdentityTijuana do
           m = FactoryBot.create(:member_with_mobile)
           u = FactoryBot.create(:tijuana_user_with_mobile_number, email: m.email)
           mobile_number = u.mobile_number
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          IdentityTijuana.fetch_user_updates(@sync_id) {
+            # pass
+          }
           u.reload
           m.reload
           expect(u).to have_attributes(mobile_number: mobile_number)
@@ -170,7 +192,9 @@ describe IdentityTijuana do
           u = FactoryBot.create(:tijuana_user_with_mobile_number)
           m = FactoryBot.create(:member_with_mobile, email: u.email)
           mobile_number = m.phone_numbers.mobile.first&.phone
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          IdentityTijuana.fetch_user_updates(@sync_id) {
+            # pass
+          }
           u.reload
           m.reload
           expect(m.phone_numbers.mobile.first&.phone).to eq(mobile_number)
@@ -182,7 +206,9 @@ describe IdentityTijuana do
           u = FactoryBot.create(:tijuana_user_with_home_number)
           m = FactoryBot.create(:member, email: u.email)
           landline_number = u.home_number
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          IdentityTijuana.fetch_user_updates(@sync_id) {
+            # pass
+          }
           u.reload
           m.reload
           expect(u).to have_attributes(home_number: landline_number)
@@ -192,7 +218,9 @@ describe IdentityTijuana do
           m = FactoryBot.create(:member_with_landline)
           u = FactoryBot.create(:tijuana_user, email: m.email)
           landline_number = m.phone_numbers.landline.first&.phone
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          IdentityTijuana.fetch_user_updates(@sync_id) {
+            # pass
+          }
           u.reload
           m.reload
           expect(phone_numbers_are_equivalent(landline_number, u.home_number)).to eq(true)
@@ -202,7 +230,9 @@ describe IdentityTijuana do
           m = FactoryBot.create(:member_with_landline)
           u = FactoryBot.create(:tijuana_user_with_home_number, email: m.email)
           landline_number = u.home_number
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          IdentityTijuana.fetch_user_updates(@sync_id) {
+            # pass
+          }
           u.reload
           m.reload
           expect(u).to have_attributes(home_number: landline_number)
@@ -212,7 +242,9 @@ describe IdentityTijuana do
           u = FactoryBot.create(:tijuana_user_with_home_number)
           m = FactoryBot.create(:member_with_landline, email: u.email)
           landline_number = m.phone_numbers.landline.first&.phone
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          IdentityTijuana.fetch_user_updates(@sync_id) {
+            # pass
+          }
           u.reload
           m.reload
           expect(m.phone_numbers.landline.first&.phone).to eq(landline_number)
@@ -227,7 +259,9 @@ describe IdentityTijuana do
           suburb = u.suburb
           state = u.postcode.state
           postcode = u.postcode.number
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          IdentityTijuana.fetch_user_updates(@sync_id) {
+            # pass
+          }
           u.reload
           m.reload
           expect(u).to have_attributes(street_address: street_address, suburb: suburb)
@@ -243,7 +277,9 @@ describe IdentityTijuana do
           state = m.address.state
           postcode = m.address.postcode
           IdentityTijuana::Postcode.create!(number: postcode, state: state)
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          IdentityTijuana.fetch_user_updates(@sync_id) {
+            # pass
+          }
           u.reload
           m.reload
           expect(u).to have_attributes(street_address: street_address, suburb: suburb)
@@ -259,7 +295,9 @@ describe IdentityTijuana do
           state = u.postcode.state
           postcode = u.postcode.number
           FactoryBot.create(:address, member: m, line1: nil, town: nil, state: nil, postcode: postcode)
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          IdentityTijuana.fetch_user_updates(@sync_id) {
+            # pass
+          }
           u.reload
           m.reload
           expect(u).to have_attributes(street_address: street_address, suburb: suburb)
@@ -276,7 +314,9 @@ describe IdentityTijuana do
           postcode = m.address.postcode
           p = IdentityTijuana::Postcode.create!(number: postcode, state: state)
           u.postcode = p
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          IdentityTijuana.fetch_user_updates(@sync_id) {
+            # pass
+          }
           u.reload
           m.reload
           expect(u).to have_attributes(street_address: street_address, suburb: suburb)
@@ -291,7 +331,9 @@ describe IdentityTijuana do
           suburb = u.suburb
           state = u.postcode.state
           postcode = u.postcode.number
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          IdentityTijuana.fetch_user_updates(@sync_id) {
+            # pass
+          }
           u.reload
           m.reload
           expect(u).to have_attributes(street_address: street_address, suburb: suburb)
@@ -307,7 +349,9 @@ describe IdentityTijuana do
           state = m.address.state
           postcode = m.address.postcode
           IdentityTijuana::Postcode.create!(number: postcode, state: state)
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          IdentityTijuana.fetch_user_updates(@sync_id) {
+            # pass
+          }
           u.reload
           m.reload
           expect(u).to have_attributes(street_address: street_address, suburb: suburb)
@@ -320,7 +364,9 @@ describe IdentityTijuana do
         it 'merges subscriptions to Identity if the most recent change was in Tijuana' do
           m = FactoryBot.create(:member)
           u = FactoryBot.create(:tijuana_user, email: m.email, is_member: true, do_not_call: false, do_not_sms: false)
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          IdentityTijuana.fetch_user_updates(@sync_id) {
+            # pass
+          }
           u.reload
           m.reload
           expect(u).to have_attributes(is_member: true, do_not_call: false, do_not_sms: false)
@@ -334,7 +380,9 @@ describe IdentityTijuana do
           MemberSubscription.create!(subscription: @calling_sub, member: m)
           MemberSubscription.create!(subscription: @sms_sub, member: m)
           u = FactoryBot.create(:tijuana_user, email: m.email, is_member: false, do_not_call: true, do_not_sms: true)
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          IdentityTijuana.fetch_user_updates(@sync_id) {
+            # pass
+          }
           u.reload
           m.reload
           expect(u).to have_attributes(is_member: false, do_not_call: true, do_not_sms: true)
@@ -348,7 +396,9 @@ describe IdentityTijuana do
           MemberSubscription.create!(subscription: @email_sub, member: m)
           MemberSubscription.create!(subscription: @calling_sub, member: m)
           MemberSubscription.create!(subscription: @sms_sub, member: m)
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          IdentityTijuana.fetch_user_updates(@sync_id) {
+            # pass
+          }
           u.reload
           m.reload
           expect(u).to have_attributes(is_member: true, do_not_call: false, do_not_sms: false)
@@ -359,7 +409,9 @@ describe IdentityTijuana do
         it 'merges unsubscriptions to Tijuana if the most recent change was in Identity' do
           u = FactoryBot.create(:tijuana_user, is_member: true, do_not_call: false, do_not_sms: false)
           m = FactoryBot.create(:member, email: u.email)
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          IdentityTijuana.fetch_user_updates(@sync_id) {
+            # pass
+          }
           u.reload
           m.reload
           expect(u).to have_attributes(is_member: false, do_not_call: true, do_not_sms: true)
@@ -372,7 +424,9 @@ describe IdentityTijuana do
           m = FactoryBot.create(:member, email: u.email)
           MemberSubscription.create!(subscription: @calling_sub, member: m)
           MemberSubscription.create!(subscription: @sms_sub, member: m)
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          IdentityTijuana.fetch_user_updates(@sync_id) {
+            # pass
+          }
           u.reload
           m.reload
           expect(u).to have_attributes(is_member: false, do_not_call: false, do_not_sms: false)
@@ -381,7 +435,9 @@ describe IdentityTijuana do
           expect(m.is_subscribed_to?(@sms_sub)).to eq(false)
           tj_updated_at = u.updated_at
           id_updated_at = m.updated_at
-          IdentityTijuana.fetch_user_updates(@sync_id) {}
+          IdentityTijuana.fetch_user_updates(@sync_id) {
+            # pass
+          }
           u.reload
           m.reload
           expect(u.updated_at).to eq(tj_updated_at)
@@ -393,7 +449,9 @@ describe IdentityTijuana do
     context 'when updating' do
       it 'updates members in Identity with changes in Tijuana' do
         u = FactoryBot.create(:tijuana_user_with_the_lot)
-        IdentityTijuana.fetch_user_updates(@sync_id) {}
+        IdentityTijuana.fetch_user_updates(@sync_id) {
+          # pass
+        }
         m = Member.find_by(email: u.email)
         new_first_name = Faker::Name.first_name
         new_last_name = Faker::Name.last_name
@@ -416,7 +474,9 @@ describe IdentityTijuana do
         u.suburb = new_suburb
         u.postcode = new_postcode
         u.save!
-        IdentityTijuana.fetch_user_updates(@sync_id) {}
+        IdentityTijuana.fetch_user_updates(@sync_id) {
+          # pass
+        }
         u.reload
         m.reload
         expect(m).to have_attributes(first_name: new_first_name, last_name: new_last_name, email: new_email)
@@ -428,7 +488,9 @@ describe IdentityTijuana do
       it 'updates users in Tijuana with changes in Identity' do
         m = FactoryBot.create(:member_with_the_lot)
         IdentityTijuana::Postcode.create!(number: m.address.postcode, state: m.address.state)
-        IdentityTijuana.fetch_user_updates(@sync_id) {}
+        IdentityTijuana.fetch_user_updates(@sync_id) {
+          # pass
+        }
         u = User.find_by(email: m.email)
         new_first_name = Faker::Name.first_name
         new_last_name = Faker::Name.last_name
@@ -441,7 +503,9 @@ describe IdentityTijuana do
         new_landline_number = FactoryBot.create(:landline_number, member: m)
         new_address = FactoryBot.create(:address, member: m)
         IdentityTijuana::Postcode.create!(number: new_address.postcode, state: new_address.state)
-        IdentityTijuana.fetch_user_updates(@sync_id) {}
+        IdentityTijuana.fetch_user_updates(@sync_id) {
+          # pass
+        }
         u.reload
         m.reload
         expect(u).to have_attributes(email: new_email, first_name: new_first_name, last_name: new_last_name)
@@ -461,7 +525,9 @@ describe IdentityTijuana do
 
       FactoryBot.create(:tijuana_user, mobile_number: '41427700300', email: '')
 
-      IdentityTijuana.fetch_user_updates(@sync_id) {}
+      IdentityTijuana.fetch_user_updates(@sync_id) {
+        # pass
+      }
 
       expect(Member.find_by_phone('61427700300')).to have_attributes(name: name)
       expect(Member.count).to eq(2)
@@ -491,9 +557,11 @@ describe IdentityTijuana do
     it 'imports no taggings if user dependent data cutoff is before taggings updated_at' do
       allow(Settings).to receive_message_chain("options.use_redshift") { false }
       allow(Settings).to receive_message_chain("options.allow_subscribe_via_upsert_member") { false }
-      IdentityTijuana.fetch_user_updates(@sync_id) {}
       Sidekiq.redis { |r| r.set 'tijuana:users:dependent_data_cutoff', Date.today - 2 }
-      IdentityTijuana.fetch_tagging_updates(@sync_id) {}
+      Sidekiq.redis { |r| r.set 'tijuana:users:dependent_data_cutoff', 2.days.ago }
+      IdentityTijuana.fetch_tagging_updates(@sync_id) {
+        # pass
+      }
 
       expect(List.count).to eq(0)
     end
@@ -501,11 +569,15 @@ describe IdentityTijuana do
     it 'imports taggings if created_at not set' do
       allow(Settings).to receive_message_chain("options.use_redshift") { false }
       allow(Settings).to receive_message_chain("options.allow_subscribe_via_upsert_member") { false }
-      IdentityTijuana::Tagging.all.update_all(created_at: nil)
-      IdentityTijuana.fetch_user_updates(@sync_id) {}
       Sidekiq.redis { |r| r.set 'tijuana:users:dependent_data_cutoff', Date.today - 2 }
+      IdentityTijuana::Tagging.all { |t| t.update!(created_at: nil) }
+      IdentityTijuana.fetch_user_updates(@sync_id) {
+        # pass
+      }
 
-      IdentityTijuana.fetch_tagging_updates(@sync_id) {}
+      IdentityTijuana.fetch_tagging_updates(@sync_id) {
+        # pass
+      }
 
       expect(List.count).to eq(2)
       expect(Member.count).to eq(4)
@@ -514,10 +586,15 @@ describe IdentityTijuana do
     it 'imports tags' do
       allow(Settings).to receive_message_chain("options.use_redshift") { false }
       allow(Settings).to receive_message_chain("options.allow_subscribe_via_upsert_member") { false }
-      IdentityTijuana.fetch_user_updates(@sync_id) {}
       Sidekiq.redis { |r| r.set 'tijuana:users:dependent_data_cutoff', Date.today + 2 }
+      IdentityTijuana.fetch_user_updates(@sync_id) {
+        # pass
+      }
+      Sidekiq.redis { |r| r.set 'tijuana:users:dependent_data_cutoff', 2.days.ago }
 
-      IdentityTijuana.fetch_tagging_updates(@sync_id) {}
+      IdentityTijuana.fetch_tagging_updates(@sync_id) {
+        # pass
+      }
 
       reef_tag = List.find_by(name: 'TIJUANA TAG: reef_syncid')
       economy_tag = List.find_by(name: 'TIJUANA TAG: economy_syncid')

@@ -391,7 +391,7 @@ module IdentityTijuana
               Rails.logger.info("ID member #{member.id} updated from TJ user #{user&.id}: #{fields_updated.join(' ')}")
             end
           end
-        rescue Exception => e
+        rescue StandardError => e
           Rails.logger.error "Tijuana member sync id:#{user.id}, error: #{e.message}"
           raise
         end
@@ -420,8 +420,9 @@ module IdentityTijuana
             end
           when :postcode
             user.postcode = Postcode.find_by(number: value)
-          when :state
-            # State is derived from the postcode in TJ, so it can't mirror any changes made in ID!
+          when :state, :reason
+            # For state, since it is derived from the postcode in TJ,
+            # it can't mirror any changes made in ID
             fields_updated.delete(key)
           when :country
             user.write_attribute(:country_iso, value.nil? ? nil : value[0..1])
@@ -440,8 +441,6 @@ module IdentityTijuana
                 :created_at => uae.created_at
               )
             end
-          when :reason
-            fields_updated.delete(key)
           else
             user.write_attribute(key, value)
           end

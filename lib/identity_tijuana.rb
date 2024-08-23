@@ -9,30 +9,22 @@ module IdentityTijuana
   MUTEX_EXPIRY_DURATION = 10.minutes
 
   def self.push(_sync_id, member_ids, _external_system_params)
-    begin
-      members = Member.where(id: member_ids).with_email.order(:id)
-      yield members, nil
-    rescue => e
-      raise e
-    end
+    members = Member.where(id: member_ids).with_email.order(:id)
+    yield members, nil
   end
 
   def self.push_in_batches(_sync_id, members, external_system_params)
-    begin
-      members.each_slice(Settings.tijuana.push_batch_amount).with_index do |batch_members, batch_index|
-        tag = JSON.parse(external_system_params)['tag']
-        rows = ActiveModel::Serializer::CollectionSerializer.new(
-          batch_members,
-          serializer: TijuanaMemberSyncPushSerializer
-        ).as_json.to_a.pluck(:email)
-        tijuana = API.new
-        tijuana.tag_emails(tag, rows)
+    members.each_slice(Settings.tijuana.push_batch_amount).with_index do |batch_members, batch_index|
+      tag = JSON.parse(external_system_params)['tag']
+      rows = ActiveModel::Serializer::CollectionSerializer.new(
+        batch_members,
+        serializer: TijuanaMemberSyncPushSerializer
+      ).as_json.to_a.pluck(:email)
+      tijuana = API.new
+      tijuana.tag_emails(tag, rows)
 
-        # TODO return write results here
-        yield batch_index, 0
-      end
-    rescue => e
-      raise e
+      # TODO return write results here
+      yield batch_index, 0
     end
   end
 
@@ -54,13 +46,9 @@ module IdentityTijuana
   end
 
   def self.pull(sync_id, external_system_params)
-    begin
-      pull_job = JSON.parse(external_system_params)['pull_job'].to_s
-      self.send(pull_job, sync_id) do |records_for_import_count, records_for_import, records_for_import_scope, pull_deferred|
-        yield records_for_import_count, records_for_import, records_for_import_scope, pull_deferred
-      end
-    rescue => e
-      raise e
+    pull_job = JSON.parse(external_system_params)['pull_job'].to_s
+    self.send(pull_job, sync_id) do |records_for_import_count, records_for_import, records_for_import_scope, pull_deferred|
+      yield records_for_import_count, records_for_import, records_for_import_scope, pull_deferred
     end
   end
 

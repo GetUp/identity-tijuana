@@ -1,8 +1,14 @@
 module IdentityTijuana
   class User < ReadWrite
     self.table_name = 'users'
-    has_many :donations
-    has_many :taggings, -> { where(taggable_type: 'User') }, foreign_key: 'taggable_id'
+    has_many :donations, dependent: nil
+    has_many(
+      :taggings,
+      -> { where(taggable_type: 'User') },
+      foreign_key: 'taggable_id',
+      inverse_of: 'taggable',
+      dependent: nil
+    )
     has_many :tags, through: :taggings
     belongs_to :postcode, optional: true
 

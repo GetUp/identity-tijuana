@@ -2,8 +2,18 @@ module IdentityTijuana
   class Donation < ReadWrite
     self.table_name = 'donations'
     belongs_to :user
-    has_many :transactions, -> { order 'transactions.created_at' }
-    has_many :donation_upgrades, -> { order 'donation_upgrades.created_at' }
+    has_many(
+      :transactions,
+      -> { order 'transactions.created_at' },
+      inverse_of: 'donation',
+      dependent: nil
+    )
+    has_many(
+      :donation_upgrades,
+      -> { order 'donation_upgrades.created_at' },
+      inverse_of: 'donation',
+      dependent: nil
+    )
 
     scope :updated_donations, ->(last_updated_at, last_id, exclude_from) {
       where('updated_at > ? or (updated_at = ? and id > ?)', last_updated_at, last_updated_at, last_id)
@@ -53,7 +63,7 @@ module IdentityTijuana
             begin
               rd = Donations::RegularDonation.upsert!(regular_donation_hash)
               regular_donation_id = rd.id
-            rescue Exception => e
+            rescue StandardError => e
               Rails.logger.error "Tijuana donation sync id:#{id}, error: #{e.message}"
               raise
             end
@@ -111,7 +121,7 @@ module IdentityTijuana
                   donation_hash[:created_at] = transaction.created_at + (offset_microseconds / 1000000.0)
                 end
               end
-            rescue Exception => e
+            rescue StandardError => e
               Rails.logger.error "Tijuana transaction sync id:#{transaction.id}, error: #{e.message}"
               raise
             end
