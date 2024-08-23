@@ -5,14 +5,14 @@ module IdentityTijuana
     has_many :transactions, -> { order 'transactions.created_at' }
     has_many :donation_upgrades, -> { order 'donation_upgrades.created_at' }
 
-    scope :updated_donations, -> (last_updated_at, last_id, exclude_from) {
+    scope :updated_donations, ->(last_updated_at, last_id, exclude_from) {
       where('updated_at > ? or (updated_at = ? and id > ?)', last_updated_at, last_updated_at, last_id)
         .and(where('updated_at < ?', exclude_from))
         .order('updated_at, id')
         .limit(Settings.tijuana.pull_batch_amount)
     }
 
-    scope :updated_donations_all, -> (last_updated_at, last_id, exclude_from) {
+    scope :updated_donations_all, ->(last_updated_at, last_id, exclude_from) {
       where('updated_at > ? or (updated_at = ? and id > ?)', last_updated_at, last_updated_at, last_id)
         .and(where('updated_at < ?', exclude_from))
     }
@@ -22,7 +22,7 @@ module IdentityTijuana
       donation.import(sync_id)
     end
 
-    def import(sync_id)
+    def import(_sync_id)
       member = Member.find_by_external_id(:tijuana, user_id)
       if member.present?
         if member.ghosting_started?
@@ -59,11 +59,12 @@ module IdentityTijuana
             end
           end
           refund_transactions = transactions.map { |t|
-            t.refund_of_id && t.successful ? [ t.refund_of_id, t ] : nil
+            t.refund_of_id && t.successful ? [t.refund_of_id, t] : nil
           }.compact.to_h
-          transactions.each do | transaction |
+          transactions.each do |transaction|
             next if transaction.refund_of_id
             next unless transaction.successful
+
             refund_transaction = refund_transactions[transaction.id]
             donation_hash = {
               # member_action_id: nil,
@@ -93,8 +94,9 @@ module IdentityTijuana
                   # are forced to offset the created_at date by however many
                   # microseconds are required to make it unique for that member
                   # and transaction amount.
-                  raise unless e.message =~ /has already been taken/
+                  raise unless /has already been taken/.match?(e.message)
                   raise if attempts > 1
+
                   tj_connection = TijuanaDonation.connection
                   preceding_duplicates = tj_connection.execute(%{
                     SELECT t.id
@@ -119,5 +121,6 @@ module IdentityTijuana
     end
   end
 end
+
 class TijuanaDonation < IdentityTijuana::Donation
 end

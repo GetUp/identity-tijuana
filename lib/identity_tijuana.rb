@@ -5,10 +5,10 @@ module IdentityTijuana
   SYNCING = 'tag'
   CONTACT_TYPE = 'email'
   PULL_JOBS = [[:fetch_user_updates, 10.minutes]]
-  MEMBER_RECORD_DATA_TYPE='object'
+  MEMBER_RECORD_DATA_TYPE = 'object'
   MUTEX_EXPIRY_DURATION = 10.minutes
 
-  def self.push(sync_id, member_ids, external_system_params)
+  def self.push(_sync_id, member_ids, _external_system_params)
     begin
       members = Member.where(id: member_ids).with_email.order(:id)
       yield members, nil
@@ -17,18 +17,18 @@ module IdentityTijuana
     end
   end
 
-  def self.push_in_batches(sync_id, members, external_system_params)
+  def self.push_in_batches(_sync_id, members, external_system_params)
     begin
       members.each_slice(Settings.tijuana.push_batch_amount).with_index do |batch_members, batch_index|
         tag = JSON.parse(external_system_params)['tag']
         rows = ActiveModel::Serializer::CollectionSerializer.new(
           batch_members,
           serializer: TijuanaMemberSyncPushSerializer
-        ).as_json.to_a.map{|member| member[:email]}
+        ).as_json.to_a.map { |member| member[:email] }
         tijuana = API.new
         tijuana.tag_emails(tag, rows)
 
-        #TODO return write results here
+        # TODO return write results here
         yield batch_index, 0
       end
     rescue => e
@@ -36,7 +36,7 @@ module IdentityTijuana
     end
   end
 
-  def self.description(sync_type, external_system_params, contact_campaign_name)
+  def self.description(sync_type, external_system_params, _contact_campaign_name)
     external_system_params_hash = JSON.parse(external_system_params)
     if sync_type === 'push'
       "#{SYSTEM_NAME.titleize} - #{SYNCING.titleize}: ##{external_system_params_hash['tag']} (#{CONTACT_TYPE})"
@@ -82,7 +82,7 @@ module IdentityTijuana
     schedule_pull_batch(:fetch_donation_updates)
   end
 
-  def self.fetch_user_updates_impl(sync_id)
+  def self.fetch_user_updates_impl(_sync_id)
     started_at = DateTime.now
     last_updated_at = get_redis_date('tijuana:users:last_updated_at')
     last_id = (Sidekiq.redis { |r| r.get 'tijuana:users:last_id' } || 0).to_i
@@ -163,7 +163,6 @@ module IdentityTijuana
 
       ActiveRecord::Base.connection.execute("INSERT INTO dedupe_processed_records (email, first_name, last_name, phone, line1, town, country, postcode) VALUES #{value_string}")
       i += 1
-      puts "Done #{i * 10_000}"
     end
   end
 
@@ -266,19 +265,16 @@ module IdentityTijuana
       LIMIT #{latest_tagging_scope_limit}
     }
 
-    puts 'Getting latest taggings'
     results = IdentityTijuana::Tagging.connection.execute(scoped_latest_taggings_sql).to_a
     tags_remaining_results = IdentityTijuana::Tagging.connection.execute(tags_remaining_behind_sql).to_a
     tags_remaining_count = tags_remaining_results.count
 
     unless results.empty?
-      puts 'Creating value strings'
       results = results.map { |row| row.try(:values) || row } # deal with results returned in array or hash form
       value_strings = results.map do |row|
         "(#{connection.quote(row[0].to_s)}, #{connection.quote(row[1])}, #{row[3].present? ? row[3] : 'null'})"
       end
 
-      puts 'Inserting value strings and merging'
       base_table_name = "tj_tags_sync_#{sync_id}_#{SecureRandom.hex(16)}"
       table_name = "tmp.#{base_table_name}"
       connection.execute(%{
@@ -332,7 +328,7 @@ module IdentityTijuana
               lastname: user_results[0][2],
               external_ids: { tijuana: list.author_id },
             },
-            entry_point: "#{SYSTEM_NAME}:#{__method__.to_s}",
+            entry_point: "#{SYSTEM_NAME}:#{__method__}",
             ignore_name_change: false
           )
           List.find(list_id).update!(author_id: author.id)
@@ -367,8 +363,6 @@ module IdentityTijuana
     results.count < tags_remaining_count
   end
 
-  private
-
   def self.acquire_mutex_lock(method_name, sync_id)
     mutex_name = "#{SYSTEM_NAME}:mutex:#{method_name}"
     new_mutex_expiry = DateTime.now + MUTEX_EXPIRY_DURATION
@@ -390,12 +384,12 @@ module IdentityTijuana
     delete_redis_date(mutex_name)
   end
 
-  def self.get_redis_date(redis_identifier, default_value=Time.at(0))
+  def self.get_redis_date(redis_identifier, default_value = Time.at(0))
     date_str = Sidekiq.redis { |r| r.get redis_identifier }
     date_str ? Time.parse(date_str) : default_value
   end
 
-  def self.set_redis_date(redis_identifier, date_time_value, as_mutex=false)
+  def self.set_redis_date(redis_identifier, date_time_value, as_mutex = false)
     date_str = date_time_value.utc.to_fs(:inspect) # Ensures fractional seconds are retained
     if as_mutex
       Sidekiq.redis { |r| r.setnx redis_identifier, date_str }
@@ -424,6 +418,7 @@ module IdentityTijuana
       worker_sync_id = (args.count > 0) ? args[0] : nil
       worker_sync = worker_sync_id ? Sync.find_by(id: worker_sync_id) : nil
       next unless worker_sync
+
       worker_system = worker_sync.external_system
       worker_method_name = JSON.parse(worker_sync.external_system_params)["pull_job"]
       already_running = (worker_system == SYSTEM_NAME &&

@@ -4,6 +4,7 @@ module IdentityTijuana
     def self.export_member(member_id)
       member = Member.find(member_id)
       return if member.ghosting_started?
+
       ext_id = MemberExternalId.find_by(system: 'tijuana', member: member)
       user_id = ext_id.external_id if ext_id.present?
       if user_id.present?
@@ -48,8 +49,6 @@ module IdentityTijuana
       sync(user, member, sync_type)
     end
 
-    private
-
     # Parameters for searching the active_record_audits table.
     AUDIT_SEARCH_PARAMS = {
       name: ['audits', 'Member', %w[first_name last_name]],
@@ -69,6 +68,7 @@ module IdentityTijuana
       default_change_date = Time.at(0) if default_change_date.nil?
       # Must have a member to search against!
       return default_change_date if member.nil?
+
       # Pull parameters to drive the audit log search.
       audit_list_name, auditable_type, audit_field_names = AUDIT_SEARCH_PARAMS[field_info_type]
       # Check whether we have an ancillary matching field.
@@ -99,12 +99,12 @@ module IdentityTijuana
           when 'PhoneNumber'
             phone_number_type =
               audit.audited_changes['phone_type'] ||
-                PhoneNumber.find_by(id: audit.auditable_id).try(:phone_type)
+              PhoneNumber.find_by(id: audit.auditable_id).try(:phone_type)
             next unless phone_number_type == ancillary_match_value
           when 'MemberSubscription'
             audit_subscription_id =
               audit.audited_changes['subscription_id'] ||
-                MemberSubscription.find_by(id: audit.auditable_id).try(:subscription_id)
+              MemberSubscription.find_by(id: audit.auditable_id).try(:subscription_id)
             next unless audit_subscription_id == ancillary_match_value
           end
         end
@@ -132,9 +132,10 @@ module IdentityTijuana
       id_datestamp_func, tj_datestamp_func,
       id_action_func, tj_action_func
     )
-      id_vals = id_field_values.map {|e| e == '' ? nil : e}
-      tj_vals = tj_field_values.map {|e| e == '' ? nil : e}
+      id_vals = id_field_values.map { |e| e == '' ? nil : e }
+      tj_vals = tj_field_values.map { |e| e == '' ? nil : e }
       return if id_vals == tj_vals
+
       id_val_count = id_vals.reject(&:nil?).count
       tj_val_count = tj_vals.reject(&:nil?).count
       case sync_type
@@ -169,7 +170,7 @@ module IdentityTijuana
         elsif id_val_count == 0 && tj_val_count > 0
           id_action_func.call
         elsif id_val_count > 0 && tj_val_count > 0
-          conflicts = id_vals.zip(tj_vals).map{ |i, t| !i.nil? && !t.nil? && i != t ? 1 : 0 }.sum
+          conflicts = id_vals.zip(tj_vals).map { |i, t| !i.nil? && !t.nil? && i != t ? 1 : 0 }.sum
           if conflicts > 0
             if id_datestamp_func.call > tj_datestamp_func.call
               tj_action_func.call
@@ -187,15 +188,15 @@ module IdentityTijuana
 
     # This function performs a sync between a user and a member.
     def self.sync(user, member, sync_type)
-      member_hash = { }
-      tj_changes = { }
+      member_hash = {}
+      tj_changes = {}
       user_updated_at = user&.updated_at || Time.at(0)
 
       # Compare first & last names.
       compare_fields(
         sync_type,
-        [ member&.first_name, member&.last_name ],
-        [ user&.first_name, user&.last_name ],
+        [member&.first_name, member&.last_name],
+        [user&.first_name, user&.last_name],
         Proc.new { get_id_change_date(member, :name, member&.updated_at) },
         Proc.new { user_updated_at },
         Proc.new {
@@ -211,10 +212,10 @@ module IdentityTijuana
       # Compare email address.
       abort_sync = false
       compare_fields(
-        sync_type, [ member&.email ], [ user&.email ],
+        sync_type, [member&.email], [user&.email],
         Proc.new { get_id_change_date(member, :email, member&.updated_at) },
         Proc.new { user_updated_at },
-        Proc.new { member_hash[:emails] = [{email: user.email}] },
+        Proc.new { member_hash[:emails] = [{ email: user.email }] },
         Proc.new {
           existing_user_with_same_email = User.find_by(email: member.email)
           if existing_user_with_same_email.present?
@@ -240,7 +241,7 @@ module IdentityTijuana
       id_mobile_number = id_mobile&.phone
       tj_mobile_number = standardise_phone_number(user&.mobile_number)
       compare_fields(
-        sync_type, [ id_mobile_number ], [ tj_mobile_number ],
+        sync_type, [id_mobile_number], [tj_mobile_number],
         Proc.new { get_id_change_date(member, :mobile, id_mobile&.updated_at || member&.updated_at) },
         Proc.new { user_updated_at },
         Proc.new {
@@ -255,7 +256,7 @@ module IdentityTijuana
       id_landline_number = id_landline&.phone
       tj_landline_number = standardise_phone_number(user&.home_number)
       compare_fields(
-        sync_type, [ id_landline_number ], [ tj_landline_number ],
+        sync_type, [id_landline_number], [tj_landline_number],
         Proc.new { get_id_change_date(member, :landline, id_landline&.updated_at || member&.updated_at) },
         Proc.new { user_updated_at },
         Proc.new {
@@ -270,10 +271,10 @@ module IdentityTijuana
       user_postcode = user&.postcode
       compare_fields(
         sync_type,
-        [ member_address&.line1, member_address&.line2, member_address&.town,
-          member_address&.country, member_address&.state, member_address&.postcode ],
-        [ user&.street_address, nil, user&.suburb,
-          user&.country_iso, user_postcode&.state, user_postcode&.number ],
+        [member_address&.line1, member_address&.line2, member_address&.town,
+         member_address&.country, member_address&.state, member_address&.postcode],
+        [user&.street_address, nil, user&.suburb,
+         user&.country_iso, user_postcode&.state, user_postcode&.number],
         Proc.new { get_id_change_date(member, :address, member_address&.updated_at || member&.updated_at) },
         Proc.new { user_updated_at },
         Proc.new {
@@ -302,17 +303,17 @@ module IdentityTijuana
       tj_email_subbed = user&.is_member
       compare_fields(
         sync_type,
-        [ id_email_subbed ],
-        [ tj_email_subbed ],
+        [id_email_subbed],
+        [tj_email_subbed],
         Proc.new { get_id_change_date(member, :email_subscription, id_email_sub&.updated_at || member&.updated_at) },
         Proc.new { user_updated_at },
         Proc.new {
           member_hash[:subscriptions] = [] unless member_hash.has_key?(:subscriptions)
           member_hash[:subscriptions].push({
-            id: Settings.tijuana.email_subscription_id,
-            action: tj_email_subbed ? 'subscribe' : 'unsubscribe',
-            reason: 'tijuana'
-          })
+                                             id: Settings.tijuana.email_subscription_id,
+                                             action: tj_email_subbed ? 'subscribe' : 'unsubscribe',
+                                             reason: 'tijuana'
+                                           })
         },
         Proc.new {
           tj_changes[:is_member] = id_email_subbed
@@ -326,17 +327,17 @@ module IdentityTijuana
       tj_sms_subbed = user&.is_member && !user&.do_not_sms
       compare_fields(
         sync_type,
-        [ id_sms_subbed ],
-        [ tj_sms_subbed ],
+        [id_sms_subbed],
+        [tj_sms_subbed],
         Proc.new { get_id_change_date(member, :sms_subscription, id_sms_sub&.updated_at || member&.updated_at) },
         Proc.new { user_updated_at },
         Proc.new {
           member_hash[:subscriptions] = [] unless member_hash.has_key?(:subscriptions)
           member_hash[:subscriptions].push({
-            id: Settings.tijuana.sms_subscription_id,
-            action: tj_sms_subbed ? 'subscribe' : 'unsubscribe',
-            reason: 'tijuana'
-          })
+                                             id: Settings.tijuana.sms_subscription_id,
+                                             action: tj_sms_subbed ? 'subscribe' : 'unsubscribe',
+                                             reason: 'tijuana'
+                                           })
         },
         Proc.new { tj_changes[:do_not_sms] = !id_sms_subbed }
       )
@@ -347,17 +348,17 @@ module IdentityTijuana
       tj_calling_subbed = user&.is_member && !user&.do_not_call
       compare_fields(
         sync_type,
-        [ id_calling_subbed ],
-        [ tj_calling_subbed ],
+        [id_calling_subbed],
+        [tj_calling_subbed],
         Proc.new { get_id_change_date(member, :calling_subscription, id_calling_sub&.updated_at || member&.updated_at) },
         Proc.new { user_updated_at },
         Proc.new {
           member_hash[:subscriptions] = [] unless member_hash.has_key?(:subscriptions)
           member_hash[:subscriptions].push({
-            id: Settings.tijuana.calling_subscription_id,
-            action: tj_calling_subbed ? 'subscribe' : 'unsubscribe',
-            reason: 'tijuana'
-          })
+                                             id: Settings.tijuana.calling_subscription_id,
+                                             action: tj_calling_subbed ? 'subscribe' : 'unsubscribe',
+                                             reason: 'tijuana'
+                                           })
         },
         Proc.new { tj_changes[:do_not_call] = !id_calling_subbed }
       )
@@ -371,7 +372,7 @@ module IdentityTijuana
           member_hash[:firstname] = member&.first_name unless member_hash.key?(:firstname) # Required param
           member_hash[:lastname] = member&.last_name unless member_hash.key?(:lastname) # Required param
           member_hash[:external_ids] = { tijuana: user&.id } # Needed for lookup
-          member_hash[:emails] = [{email: user&.email}] if sync_type == :merge # Needed for lookup
+          member_hash[:emails] = [{ email: user&.email }] if sync_type == :merge # Needed for lookup
           member_hash[:ignore_phone_number_match] = true # Don't match by phone number, too error-prone
 
           new_member = UpsertMember.call(
@@ -382,7 +383,7 @@ module IdentityTijuana
 
           if new_member.present?
             if member.blank?
-              new_member.created_at = user&.created_at  # Preserve TJ creation date
+              new_member.created_at = user&.created_at # Preserve TJ creation date
               new_member.save
               member = new_member
               Rails.logger.info("ID member #{member.id} created from TJ user #{user&.id}")
@@ -404,7 +405,7 @@ module IdentityTijuana
             return
           end
           user = User.new
-          user.created_at = member&.created_at  # Preserve ID creation date
+          user.created_at = member&.created_at # Preserve ID creation date
           user_created = true
         end
         fields_updated = tj_changes.keys.dup

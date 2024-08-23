@@ -1,7 +1,6 @@
 require 'rails_helper'
 
 describe IdentityTijuana do
-
   before(:all) do
     @sync_id = 1
     Sidekiq::Testing.inline!
@@ -16,11 +15,11 @@ describe IdentityTijuana do
 
   context '#pull' do
     before(:each) do
-      @external_system_params = JSON.generate({'pull_job' => 'fetch_user_updates'})
+      @external_system_params = JSON.generate({ 'pull_job' => 'fetch_user_updates' })
     end
 
     context 'with valid parameters' do
-      it 'should call the corresponding method'  do
+      it 'should call the corresponding method' do
         expect(IdentityTijuana).to receive(:fetch_user_updates).exactly(1).times.with(1)
         IdentityTijuana.pull(@sync_id, @external_system_params)
       end
@@ -486,7 +485,7 @@ describe IdentityTijuana do
       FactoryBot.create(:tijuana_tagging, taggable_id: economy_user.id, taggable_type: 'User', tag: economy_tag)
       FactoryBot.create(:tijuana_tagging, taggable_id: non_user.id, taggable_type: 'User', tag: non_sync_tag)
 
-      #4.times { FactoryBot.create(:list) }
+      # 4.times { FactoryBot.create(:list) }
     end
 
     it 'imports no taggings if user dependent data cutoff is before taggings updated_at' do

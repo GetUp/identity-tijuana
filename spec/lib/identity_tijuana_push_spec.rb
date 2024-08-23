@@ -7,7 +7,7 @@ describe IdentityTijuana do
 
   context '#push' do
     before(:each) do
-      @external_system_params = JSON.generate({'tag' => 'test_tag'})
+      @external_system_params = JSON.generate({ 'tag' => 'test_tag' })
 
       2.times { FactoryBot.create(:member) }
       FactoryBot.create(:member_without_email)
@@ -15,7 +15,7 @@ describe IdentityTijuana do
     end
 
     context '#push' do
-      @external_system_params = JSON.generate({'tag' => 'test_tag'})
+      @external_system_params = JSON.generate({ 'tag' => 'test_tag' })
 
       2.times { FactoryBot.create(:member) }
       FactoryBot.create(:member_without_email)
@@ -24,7 +24,7 @@ describe IdentityTijuana do
 
     context 'with valid parameters' do
       it 'yeilds members_with_emails' do
-        IdentityTijuana.push(@sync_id, @members, @external_system_params) do |members_with_emails, campaign_name|
+        IdentityTijuana.push(@sync_id, @members, @external_system_params) do |members_with_emails, _campaign_name|
           expect(members_with_emails.count).to eq(2)
         end
       end
@@ -33,9 +33,9 @@ describe IdentityTijuana do
 
   context '#push_in_batches' do
     before(:each) do
-      expect_any_instance_of(IdentityTijuana::API).to receive(:tag_emails).with(anything, anything) {{ }}
+      expect_any_instance_of(IdentityTijuana::API).to receive(:tag_emails).with(anything, anything) { {} }
 
-      @external_system_params = JSON.generate({'tag' => 'test_tag'})
+      @external_system_params = JSON.generate({ 'tag' => 'test_tag' })
 
       allow(Settings).to receive_message_chain("tijuana.push_batch_amount") { 10 }
       allow(Settings).to receive_message_chain("tijuana.api.url") { "http://tijuana" }
@@ -48,13 +48,13 @@ describe IdentityTijuana do
 
     context 'with valid parameters' do
       it 'yields correct batch_index' do
-        IdentityTijuana.push_in_batches(1, @members, @external_system_params) do |batch_index, write_result_count|
+        IdentityTijuana.push_in_batches(1, @members, @external_system_params) do |batch_index, _write_result_count|
           expect(batch_index).to eq(0)
         end
       end
-      #TODO update with write results
+      # TODO update with write results
       it 'yields write_result_count' do
-        IdentityTijuana.push_in_batches(1, @members, @external_system_params) do |batch_index, write_result_count|
+        IdentityTijuana.push_in_batches(1, @members, @external_system_params) do |_batch_index, write_result_count|
           expect(write_result_count).to eq(0)
         end
       end
@@ -63,7 +63,7 @@ describe IdentityTijuana do
 
   context 'with server errors' do
     before(:each) do
-      @external_system_params = JSON.generate({'tag' => 'test_tag'})
+      @external_system_params = JSON.generate({ 'tag' => 'test_tag' })
 
       allow(Settings).to receive_message_chain("tijuana.push_batch_amount") { 10 }
       allow(Settings).to receive_message_chain("tijuana.api.url") { "http://tijuana" }
