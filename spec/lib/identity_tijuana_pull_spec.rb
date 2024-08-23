@@ -56,7 +56,7 @@ describe IdentityTijuana do
       end
       it 'creates new users in Tijuana' do
         m = FactoryBot.create(:member_with_the_lot)
-        IdentityTijuana::Postcode.create(number: m.address.postcode, state: m.address.state)
+        IdentityTijuana::Postcode.create!(number: m.address.postcode, state: m.address.state)
         IdentityTijuana.fetch_user_updates(@sync_id) {}
         u = User.find_by(email: m.email)
         expect(u).to have_attributes(first_name: m.first_name, last_name: m.last_name)
@@ -242,7 +242,7 @@ describe IdentityTijuana do
           suburb = m.address.town
           state = m.address.state
           postcode = m.address.postcode
-          IdentityTijuana::Postcode.create(number: postcode, state: state)
+          IdentityTijuana::Postcode.create!(number: postcode, state: state)
           IdentityTijuana.fetch_user_updates(@sync_id) {}
           u.reload
           m.reload
@@ -274,7 +274,7 @@ describe IdentityTijuana do
           suburb = m.address.town
           state = m.address.state
           postcode = m.address.postcode
-          p = IdentityTijuana::Postcode.create(number: postcode, state: state)
+          p = IdentityTijuana::Postcode.create!(number: postcode, state: state)
           u.postcode = p
           IdentityTijuana.fetch_user_updates(@sync_id) {}
           u.reload
@@ -306,7 +306,7 @@ describe IdentityTijuana do
           suburb = m.address.town
           state = m.address.state
           postcode = m.address.postcode
-          IdentityTijuana::Postcode.create(number: postcode, state: state)
+          IdentityTijuana::Postcode.create!(number: postcode, state: state)
           IdentityTijuana.fetch_user_updates(@sync_id) {}
           u.reload
           m.reload
@@ -330,9 +330,9 @@ describe IdentityTijuana do
         end
         it 'merges unsubscriptions to Identity if the most recent change was in Tijuana' do
           m = FactoryBot.create(:member)
-          MemberSubscription.create(subscription: @email_sub, member: m)
-          MemberSubscription.create(subscription: @calling_sub, member: m)
-          MemberSubscription.create(subscription: @sms_sub, member: m)
+          MemberSubscription.create!(subscription: @email_sub, member: m)
+          MemberSubscription.create!(subscription: @calling_sub, member: m)
+          MemberSubscription.create!(subscription: @sms_sub, member: m)
           u = FactoryBot.create(:tijuana_user, email: m.email, is_member: false, do_not_call: true, do_not_sms: true)
           IdentityTijuana.fetch_user_updates(@sync_id) {}
           u.reload
@@ -345,9 +345,9 @@ describe IdentityTijuana do
         it 'merges subscriptions to Tijuana if the most recent change was in Identity' do
           u = FactoryBot.create(:tijuana_user, is_member: false, do_not_call: true, do_not_sms: true)
           m = FactoryBot.create(:member, email: u.email)
-          MemberSubscription.create(subscription: @email_sub, member: m)
-          MemberSubscription.create(subscription: @calling_sub, member: m)
-          MemberSubscription.create(subscription: @sms_sub, member: m)
+          MemberSubscription.create!(subscription: @email_sub, member: m)
+          MemberSubscription.create!(subscription: @calling_sub, member: m)
+          MemberSubscription.create!(subscription: @sms_sub, member: m)
           IdentityTijuana.fetch_user_updates(@sync_id) {}
           u.reload
           m.reload
@@ -370,8 +370,8 @@ describe IdentityTijuana do
         it 'merges to a stable state when subscriptions in Identity cannot be represented in Tijuana' do
           u = FactoryBot.create(:tijuana_user, is_member: true, do_not_call: false, do_not_sms: false)
           m = FactoryBot.create(:member, email: u.email)
-          MemberSubscription.create(subscription: @calling_sub, member: m)
-          MemberSubscription.create(subscription: @sms_sub, member: m)
+          MemberSubscription.create!(subscription: @calling_sub, member: m)
+          MemberSubscription.create!(subscription: @sms_sub, member: m)
           IdentityTijuana.fetch_user_updates(@sync_id) {}
           u.reload
           m.reload
@@ -397,7 +397,7 @@ describe IdentityTijuana do
         m = Member.find_by(email: u.email)
         new_first_name = Faker::Name.first_name
         new_last_name = Faker::Name.last_name
-        new_email = Faker::Internet.email
+        Faker::Internet.email
         # XXX syncing email changes from TJ to Id was disabled as of
         # e133c1d06fda1ee025a8242bc39692b3fa52ee54, so add this to
         # keep the test working otherwise for now:
@@ -415,7 +415,7 @@ describe IdentityTijuana do
         u.street_address = new_street_address
         u.suburb = new_suburb
         u.postcode = new_postcode
-        u.save
+        u.save!
         IdentityTijuana.fetch_user_updates(@sync_id) {}
         u.reload
         m.reload
@@ -427,7 +427,7 @@ describe IdentityTijuana do
       end
       it 'updates users in Tijuana with changes in Identity' do
         m = FactoryBot.create(:member_with_the_lot)
-        IdentityTijuana::Postcode.create(number: m.address.postcode, state: m.address.state)
+        IdentityTijuana::Postcode.create!(number: m.address.postcode, state: m.address.state)
         IdentityTijuana.fetch_user_updates(@sync_id) {}
         u = User.find_by(email: m.email)
         new_first_name = Faker::Name.first_name
@@ -436,11 +436,11 @@ describe IdentityTijuana do
         m.first_name = new_first_name
         m.last_name = new_last_name
         m.email = new_email
-        m.save
+        m.save!
         new_mobile_number = FactoryBot.create(:mobile_number, member: m)
         new_landline_number = FactoryBot.create(:landline_number, member: m)
         new_address = FactoryBot.create(:address, member: m)
-        IdentityTijuana::Postcode.create(number: new_address.postcode, state: new_address.state)
+        IdentityTijuana::Postcode.create!(number: new_address.postcode, state: new_address.state)
         IdentityTijuana.fetch_user_updates(@sync_id) {}
         u.reload
         m.reload

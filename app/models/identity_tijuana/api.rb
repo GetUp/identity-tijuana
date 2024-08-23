@@ -10,7 +10,7 @@ module IdentityTijuana
 
     def tag_emails(tag, emails)
       res = @client.post(@url, { tag: tag, :"emails[]" => emails }, @headers)
-      if res.status < 200 or res.status >= 300
+      if (res.status < 200) || (res.status >= 300)
         message = "Tijuana HTTP POST failed: #{res.status}:#{res.reason}"
         Rails.logger.debug message
         Rails.logger.debug res.body

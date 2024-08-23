@@ -7,14 +7,14 @@ module IdentityTijuana
 
     scope :updated_donations, ->(last_updated_at, last_id, exclude_from) {
       where('updated_at > ? or (updated_at = ? and id > ?)', last_updated_at, last_updated_at, last_id)
-        .and(where('updated_at < ?', exclude_from))
+        .and(where(updated_at: ...exclude_from))
         .order('updated_at, id')
         .limit(Settings.tijuana.pull_batch_amount)
     }
 
     scope :updated_donations_all, ->(last_updated_at, last_id, exclude_from) {
       where('updated_at > ? or (updated_at = ? and id > ?)', last_updated_at, last_updated_at, last_id)
-        .and(where('updated_at < ?', exclude_from))
+        .and(where(updated_at: ...exclude_from))
     }
 
     def self.import(donation_id, sync_id)
@@ -58,9 +58,9 @@ module IdentityTijuana
               raise
             end
           end
-          refund_transactions = transactions.map { |t|
+          refund_transactions = transactions.filter_map { |t|
             t.refund_of_id && t.successful ? [t.refund_of_id, t] : nil
-          }.compact.to_h
+          }.to_h
           transactions.each do |transaction|
             next if transaction.refund_of_id
             next unless transaction.successful
@@ -94,7 +94,7 @@ module IdentityTijuana
                   # are forced to offset the created_at date by however many
                   # microseconds are required to make it unique for that member
                   # and transaction amount.
-                  raise unless /has already been taken/.match?(e.message)
+                  raise unless e.message.include?('has already been taken')
                   raise if attempts > 1
 
                   tj_connection = TijuanaDonation.connection

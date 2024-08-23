@@ -9,7 +9,7 @@ module IdentityTijuana
       user_id = ext_id.external_id if ext_id.present?
       if user_id.present?
         user = User.find_by(id: user_id)
-        ext_id.destroy if user.blank?
+        ext_id.destroy! if user.blank?
       end
       if user.blank?
         sync_type = :merge
@@ -59,13 +59,13 @@ module IdentityTijuana
       email_subscription: ['associated_audits', 'MemberSubscription', %w[unsubscribed_at]],
       sms_subscription: ['associated_audits', 'MemberSubscription', %w[unsubscribed_at]],
       calling_subscription: ['associated_audits', 'Member_subscription', %w[unsubscribed_at]],
-    }
+    }.freeze
 
     # Use the audit log to work out the date/time a given field or set of
     # fields was last changed in ID.
     def self.get_id_change_date(member, field_info_type, default_change_date = nil)
       # Default change date to the epoch if not passed, or if passed as nil.
-      default_change_date = Time.at(0) if default_change_date.nil?
+      default_change_date = Time.zone.at(0) if default_change_date.nil?
       # Must have a member to search against!
       return default_change_date if member.nil?
 
@@ -136,8 +136,8 @@ module IdentityTijuana
       tj_vals = tj_field_values.map { |e| e == '' ? nil : e }
       return if id_vals == tj_vals
 
-      id_val_count = id_vals.reject(&:nil?).count
-      tj_val_count = tj_vals.reject(&:nil?).count
+      id_val_count = id_vals.count { |element| !element.nil? }
+      tj_val_count = tj_vals.count { |element| !element.nil? }
       case sync_type
       when :create
         # Create scenario is when the member doesn't exist yet in one system.
@@ -170,7 +170,7 @@ module IdentityTijuana
         elsif id_val_count == 0 && tj_val_count > 0
           id_action_func.call
         elsif id_val_count > 0 && tj_val_count > 0
-          conflicts = id_vals.zip(tj_vals).map { |i, t| !i.nil? && !t.nil? && i != t ? 1 : 0 }.sum
+          conflicts = id_vals.zip(tj_vals).sum { |i, t| !i.nil? && !t.nil? && i != t ? 1 : 0 }
           if conflicts > 0
             if id_datestamp_func.call > tj_datestamp_func.call
               tj_action_func.call
@@ -190,7 +190,7 @@ module IdentityTijuana
     def self.sync(user, member, sync_type)
       member_hash = {}
       tj_changes = {}
-      user_updated_at = user&.updated_at || Time.at(0)
+      user_updated_at = user&.updated_at || Time.zone.at(0)
 
       # Compare first & last names.
       compare_fields(
@@ -384,7 +384,7 @@ module IdentityTijuana
           if new_member.present?
             if member.blank?
               new_member.created_at = user&.created_at # Preserve TJ creation date
-              new_member.save
+              new_member.save!
               member = new_member
               Rails.logger.info("ID member #{member.id} created from TJ user #{user&.id}")
             else
@@ -428,13 +428,13 @@ module IdentityTijuana
           when :is_member
             user.write_attribute(:is_member, value)
             msg = "#{value ? 'Subscribed' : 'Unsubscribed'} via update from Identity."
-            uae = IdentityTijuana::UserActivityEvent.create(
+            uae = IdentityTijuana::UserActivityEvent.create!(
               :activity => value ? :subscribed : :unsubscribed,
               :user => user,
               :public_stream_html => msg,
             )
             unless value
-              IdentityTijuana::Unsubscribe.create(
+              IdentityTijuana::Unsubscribe.create!(
                 :user => user,
                 :specifics => tj_changes[:reason] || msg,
                 :created_at => uae.created_at
@@ -447,11 +447,11 @@ module IdentityTijuana
           end
         end
         if user_created
-          user.save
-          MemberExternalId.create(member: member, system: 'tijuana', external_id: user.id) if user_created
+          user.save!
+          MemberExternalId.create!(member: member, system: 'tijuana', external_id: user.id) if user_created
           Rails.logger.info("TJ user #{user.id} created from ID member #{member&.id}")
         elsif fields_updated.count > 0
-          user.save
+          user.save!
           Rails.logger.info("TJ user #{user.id} updated from ID member #{member&.id}: #{fields_updated.join(' ')}")
         end
       end

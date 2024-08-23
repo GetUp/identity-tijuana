@@ -1,11 +1,11 @@
 require "identity_tijuana/engine"
 
 module IdentityTijuana
-  SYSTEM_NAME = 'tijuana'
-  SYNCING = 'tag'
-  CONTACT_TYPE = 'email'
-  PULL_JOBS = [[:fetch_user_updates, 10.minutes]]
-  MEMBER_RECORD_DATA_TYPE = 'object'
+  SYSTEM_NAME = 'tijuana'.freeze
+  SYNCING = 'tag'.freeze
+  CONTACT_TYPE = 'email'.freeze
+  PULL_JOBS = [[:fetch_user_updates, 10.minutes]].freeze
+  MEMBER_RECORD_DATA_TYPE = 'object'.freeze
   MUTEX_EXPIRY_DURATION = 10.minutes
 
   def self.push(_sync_id, member_ids, _external_system_params)
@@ -24,7 +24,7 @@ module IdentityTijuana
         rows = ActiveModel::Serializer::CollectionSerializer.new(
           batch_members,
           serializer: TijuanaMemberSyncPushSerializer
-        ).as_json.to_a.map { |member| member[:email] }
+        ).as_json.to_a.pluck(:email)
         tijuana = API.new
         tijuana.tag_emails(tag, rows)
 
@@ -97,8 +97,9 @@ module IdentityTijuana
       MemberSync.import_user(user.id)
     end
 
-    updated_member_ids = Member.connection.execute(<<~SQL
-        SELECT id as member_id
+    updated_member_ids = Member.connection.execute(
+      <<~SQL.squish
+          SELECT id as member_id
         FROM members
         WHERE updated_at > '#{last_updated_at}'
         AND updated_at <= '#{users_dependent_data_cutoff}'
@@ -119,7 +120,7 @@ module IdentityTijuana
         AND updated_at <= '#{users_dependent_data_cutoff}'
         ORDER BY member_id;
       SQL
-    ).map {|member_id_row| member_id_row['member_id']}
+    ).pluck('member_id')
 
     updated_member_ids.each do |member_id|
       MemberSync.export_member(member_id)
@@ -312,7 +313,7 @@ module IdentityTijuana
         FROM #{table_name} et
         JOIN lists l
           ON l.name = 'TIJUANA TAG: ' || et.tag
-      }).to_a.map { |row| row['id'] }
+      }).to_a.pluck('id')
 
       connection.execute("DROP TABLE #{table_name};")
 
@@ -384,9 +385,9 @@ module IdentityTijuana
     delete_redis_date(mutex_name)
   end
 
-  def self.get_redis_date(redis_identifier, default_value = Time.at(0))
+  def self.get_redis_date(redis_identifier, default_value = Time.at(0).utc)
     date_str = Sidekiq.redis { |r| r.get redis_identifier }
-    date_str ? Time.parse(date_str) : default_value
+    date_str ? Time.zone.parse(date_str) : default_value
   end
 
   def self.set_redis_date(redis_identifier, date_time_value, as_mutex = false)
