@@ -5,14 +5,7 @@ ENV['RAILS_ENV'] ||= 'test'
 # This is normally done as part of Rails boot. We need it earlier in test to
 # ensure ENV['DATABASE_URL'] is set so we cab infer external database URLs next
 require 'dotenv'
-Dotenv.load('.env.test')
-
-# This needs to be done once ENV['DATABASE_URL'] is set, and before
-#  environment.rb is required, since that triggers Settings.load! which copies
-# external database urls from ENV into Settings.
-# TODO: Make this less brittle
-require 'support/external_database'
-ExternalDatabaseHelpers.set_external_database_urls(ENV['DATABASE_URL'])
+Dotenv.load('spec/test_identity_app/.env.test')
 
 # Load rails
 require File.expand_path('../test_identity_app/config/environment', __FILE__)
