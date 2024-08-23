@@ -39,25 +39,66 @@ Sidekiq::Testing.fake!
 # If you are not using ActiveRecord, you can remove this line.
 ActiveRecord::Migration.maintain_test_schema!
 
-# Ensure external databases are exist and are setup
-ExternalDatabaseHelpers.setup
-
 # Turn off Redshift because this creates problems with transactions
 RedshiftDB = ActiveRecord::Base
+
+require 'database_cleaner/active_record'
 
 RSpec.configure do |config|
   config.fixture_path = "#{Rails.root}/spec/fixtures"
 
   config.before(:suite) do
-    DatabaseCleaner[:active_record].strategy = :truncation
+    # Use 'truncation' for the strategy instead of 'transaction' for
+    # all cleaners below because although truncation is slower, the
+    # transaction strategy causes negative interactions between
+    # fixtures created and the test code.
+    #
+    # In particular, Identity Subscription::FOO_SUBSCRIPTION instances
+    # are lazily populated - deleting the rows for those in the DB can
+    # cause the id of the older versions to be inconsistent with those
+    # in the DB.
+    #
+    # Also, local IdentityTijuana classes that use the ReadWrite model
+    # and the ReadOnly model use different database connections, and
+    # this means that when creating fixtures the DatabaseCleaner's
+    # transactions hide objects created from the other.
+
+    DatabaseCleaner[:active_record].strategy = [
+      :truncation, except: ['subscriptions', 'settings']
+    ]
     DatabaseCleaner[:active_record].clean_with(:truncation)
+
+    DatabaseCleaner[
+      :active_record,
+      db: IdentityTijuana::ReadWrite
+    ].strategy = :truncation
+    DatabaseCleaner[
+      :active_record,
+      db: IdentityTijuana::ReadWrite
+    ].clean_with(:truncation)
+
+    DatabaseCleaner[
+      :active_record,
+      db: IdentityTijuana::ReadOnly
+    ].strategy = :truncation
+    DatabaseCleaner[
+      :active_record,
+      db: IdentityTijuana::ReadOnly
+    ].clean_with(:truncation)
+
     DatabaseCleaner[:redis].strategy = :deletion
-    DatabaseCleaner[:redis].clean
   end
 
   config.around(:each) do |example|
-    clean_external_database
     DatabaseCleaner.cleaning do
+      # Allow individual specs to do this when they need to via a method in
+      # auth_helpers, which could also run `FactoryBot.create(:member_admin)`
+      # Role.create!(description: 'Admin')
+      # Subscriptions that are assumed to exist for many tests
+      # [:email, :sms, :notification].each do |channel|
+      #  FactoryBot.create(:"#{channel}_subscription")
+      # end
+      # ActiveRecord::Base.connection.execute("ALTER SEQUENCE subscriptions_id_seq RESTART WITH 4;")
       example.run
     end
   end
@@ -86,9 +127,4 @@ RSpec.configure do |config|
   config.filter_rails_from_backtrace!
   # arbitrary gems may also be filtered via:
   # config.filter_gems_from_backtrace("gem name")
-end
-
-# TODO: Move to external helpers
-def clean_external_database
-  ExternalDatabaseHelpers.clean
 end
