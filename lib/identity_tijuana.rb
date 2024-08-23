@@ -228,7 +228,9 @@ module IdentityTijuana
     started_at = DateTime.now
     last_id = (Sidekiq.redis { |r| r.get 'tijuana:taggings:last_id' } || 0).to_i
     users_dependent_data_cutoff = get_redis_date('tijuana:users:dependent_data_cutoff')
-    connection = ActiveRecord::Base.connection == List.connection ? ActiveRecord::Base.connection : List.connection
+
+    tj_rw_connection = IdentityTijuana::Tagging.connection
+    id_rw_connection = Member.connection
 
     tags_remaining_behind_sql = %{
       SELECT tu.taggable_id, t.name, tu.id, t.author_id, tu.created_at
@@ -237,7 +239,7 @@ module IdentityTijuana
         ON t.id = tu.tag_id
       WHERE tu.id > #{last_id}
         AND taggable_type = 'User'
-        AND (tu.created_at < #{connection.quote(users_dependent_data_cutoff)} OR tu.created_at is null)
+        AND (tu.created_at < #{tj_rw_connection.quote(users_dependent_data_cutoff)} OR tu.created_at is null)
         AND t.name like '%_syncid%'
     }
 
@@ -248,25 +250,25 @@ module IdentityTijuana
         ON t.id = tu.tag_id
       WHERE tu.id > #{last_id}
         AND taggable_type = 'User'
-        AND (tu.created_at < #{connection.quote(users_dependent_data_cutoff)} OR tu.created_at is null)
+        AND (tu.created_at < #{tj_rw_connection.quote(users_dependent_data_cutoff)} OR tu.created_at is null)
         AND t.name like '%_syncid%'
       ORDER BY tu.id
       LIMIT #{latest_tagging_scope_limit}
     }
 
-    results = IdentityTijuana::Tagging.connection.execute(scoped_latest_taggings_sql).to_a
-    tags_remaining_results = IdentityTijuana::Tagging.connection.execute(tags_remaining_behind_sql).to_a
+    results = tj_rw_connection.execute(scoped_latest_taggings_sql).to_a
+    tags_remaining_results = tj_rw_connection.execute(tags_remaining_behind_sql).to_a
     tags_remaining_count = tags_remaining_results.count
 
     unless results.empty?
       results = results.map { |row| row.try(:values) || row } # deal with results returned in array or hash form
       value_strings = results.map do |row|
-        "(#{connection.quote(row[0].to_s)}, #{connection.quote(row[1])}, #{row[3].present? ? row[3] : 'null'})"
+        "(#{id_rw_connection.quote(row[0].to_s)}, #{id_rw_connection.quote(row[1])}, #{row[3].presence || 'null'})"
       end
 
       base_table_name = "tj_tags_sync_#{sync_id}_#{SecureRandom.hex(16)}"
       table_name = "tmp.#{base_table_name}"
-      connection.execute(%{
+      id_rw_connection.execute(%{
         CREATE SCHEMA IF NOT EXISTS tmp;
         DROP TABLE IF EXISTS #{table_name};
         CREATE TABLE #{table_name} (tijuana_id TEXT, tag TEXT, tijuana_author_id INTEGER);
@@ -275,7 +277,7 @@ module IdentityTijuana
         CREATE INDEX #{base_table_name}_tag ON #{table_name} (tag);
       })
 
-      connection.execute(%{
+      id_rw_connection.execute(%{
         INSERT INTO lists (name, author_id, created_at, updated_at)
         SELECT DISTINCT 'TIJUANA TAG: ' || et.tag, author_id, current_timestamp, current_timestamp
         FROM #{table_name} et
@@ -284,7 +286,7 @@ module IdentityTijuana
         WHERE l.id is null;
         })
 
-      connection.execute(%Q{
+      id_rw_connection.execute(%Q{
         INSERT INTO list_members (member_id, list_id, created_at, updated_at)
         SELECT DISTINCT mei.member_id, l.id, current_timestamp, current_timestamp
         FROM #{table_name} et
@@ -297,17 +299,17 @@ module IdentityTijuana
         WHERE lm.id is null;
       })
 
-      list_ids = connection.execute(%Q{SELECT DISTINCT l.id
+      list_ids = id_rw_connection.execute(%Q{SELECT DISTINCT l.id
         FROM #{table_name} et
         JOIN lists l
           ON l.name = 'TIJUANA TAG: ' || et.tag
       }).to_a.pluck('id')
 
-      connection.execute("DROP TABLE #{table_name};")
+      id_rw_connection.execute("DROP TABLE #{table_name};")
 
       list_ids.each do |list_id|
         list = List.find(list_id)
-        user_results = User.connection.execute("SELECT email, first_name, last_name FROM users WHERE id = #{ActiveRecord::Base.connection.quote(list.author_id)}").to_a
+        user_results = tj_rw_connection.execute("SELECT email, first_name, last_name FROM users WHERE id = #{ActiveRecord::Base.connection.quote(list.author_id)}").to_a
         if user_results && user_results[0]
           ## Create Members for both the user and campaign contact
           author = UpsertMember.call(
