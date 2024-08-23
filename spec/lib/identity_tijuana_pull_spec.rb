@@ -6,6 +6,30 @@ describe IdentityTijuana do
     Sidekiq::Testing.inline!
   end
 
+  before(:each) do
+    @email_sub = Subscription::EMAIL_SUBSCRIPTION
+    @calling_sub = Subscription::CALLING_SUBSCRIPTION
+    @sms_sub = Subscription::SMS_SUBSCRIPTION
+    allow(Settings).to(
+      receive_message_chain("tijuana.database_url") { ENV['TIJUANA_DATABASE_URL'] }
+    )
+    allow(Settings).to receive_message_chain("tijuana.email_subscription_id") { @email_sub.id }
+    allow(Settings).to receive_message_chain("tijuana.calling_subscription_id") { @calling_sub.id }
+    allow(Settings).to receive_message_chain("tijuana.sms_subscription_id") { @sms_sub.id }
+    allow(Settings).to receive_message_chain("tijuana.pull_batch_amount") { nil }
+    allow(Settings).to receive_message_chain("tijuana.push_batch_amount") { nil }
+
+    allow(Settings).to receive_message_chain("options.use_redshift") { false }
+    allow(Settings).to receive_message_chain("options.allow_subscribe_via_upsert_member") { true }
+    allow(Settings).to receive_message_chain("options.default_member_opt_in_subscriptions") { true }
+    allow(Settings).to receive_message_chain("options.default_phone_country_code") { '61' }
+    allow(Settings).to receive_message_chain("options.default_mobile_phone_national_destination_code") { 4 }
+    allow(Settings).to receive_message_chain("options.lookup_phone_type_on_create") { true }
+
+    allow(Settings).to receive_message_chain("geography.postcode_dash") { false }
+    allow(Settings).to receive_message_chain("geography.area_lookup.track_area_probabilities") { false }
+  end
+
   def phone_numbers_are_equivalent(phone1, phone2)
     # Compare only the last 8 digits to sidestep issues with formatting of the prefix.
     ph1 = phone1 ? phone1[-8..-1] || phone1 : nil
@@ -28,19 +52,9 @@ describe IdentityTijuana do
 
   context '#fetch_user_updates' do
     before(:each) do
-      @email_sub = FactoryBot.create(:email_subscription)
-      @calling_sub = FactoryBot.create(:calling_subscription)
-      @sms_sub = FactoryBot.create(:sms_subscription)
-      allow(Settings).to receive_message_chain("options.use_redshift") { false }
-      allow(Settings).to receive_message_chain("options.allow_subscribe_via_upsert_member") { true }
-      allow(Settings).to receive_message_chain("options.default_member_opt_in_subscriptions") { true }
-      allow(Settings).to receive_message_chain("options.default_phone_country_code") { '61' }
-      allow(Settings).to receive_message_chain("options.default_mobile_phone_national_destination_code") { '4' }
-      allow(Settings).to receive_message_chain("tijuana.email_subscription_id") { @email_sub.id }
-      allow(Settings).to receive_message_chain("tijuana.calling_subscription_id") { @calling_sub.id }
-      allow(Settings).to receive_message_chain("tijuana.sms_subscription_id") { @sms_sub.id }
-      allow(Settings).to receive_message_chain("tijuana.pull_batch_amount") { nil }
-      allow(Settings).to receive_message_chain("tijuana.push_batch_amount") { nil }
+      @email_sub = Subscription::EMAIL_SUBSCRIPTION
+      @calling_sub = Subscription::CALLING_SUBSCRIPTION
+      @sms_sub = Subscription::SMS_SUBSCRIPTION
     end
 
     context 'when creating' do
@@ -518,7 +532,6 @@ describe IdentityTijuana do
     end
 
     it 'does not upsert members based on phone' do
-      allow(Settings).to receive_message_chain(:options, :default_mobile_phone_national_destination_code).and_return(4)
       member = FactoryBot.create(:member)
       name = member.name
       member.update_phone_number('61427700300')
@@ -555,9 +568,6 @@ describe IdentityTijuana do
     end
 
     it 'imports no taggings if user dependent data cutoff is before taggings updated_at' do
-      allow(Settings).to receive_message_chain("options.use_redshift") { false }
-      allow(Settings).to receive_message_chain("options.allow_subscribe_via_upsert_member") { false }
-      Sidekiq.redis { |r| r.set 'tijuana:users:dependent_data_cutoff', Date.today - 2 }
       Sidekiq.redis { |r| r.set 'tijuana:users:dependent_data_cutoff', 2.days.ago }
       IdentityTijuana.fetch_tagging_updates(@sync_id) {
         # pass
@@ -567,13 +577,11 @@ describe IdentityTijuana do
     end
 
     it 'imports taggings if created_at not set' do
-      allow(Settings).to receive_message_chain("options.use_redshift") { false }
-      allow(Settings).to receive_message_chain("options.allow_subscribe_via_upsert_member") { false }
-      Sidekiq.redis { |r| r.set 'tijuana:users:dependent_data_cutoff', Date.today - 2 }
       IdentityTijuana::Tagging.all { |t| t.update!(created_at: nil) }
       IdentityTijuana.fetch_user_updates(@sync_id) {
         # pass
       }
+      Sidekiq.redis { |r| r.set 'tijuana:users:dependent_data_cutoff', 2.days.ago }
 
       IdentityTijuana.fetch_tagging_updates(@sync_id) {
         # pass
@@ -584,9 +592,6 @@ describe IdentityTijuana do
     end
 
     it 'imports tags' do
-      allow(Settings).to receive_message_chain("options.use_redshift") { false }
-      allow(Settings).to receive_message_chain("options.allow_subscribe_via_upsert_member") { false }
-      Sidekiq.redis { |r| r.set 'tijuana:users:dependent_data_cutoff', Date.today + 2 }
       IdentityTijuana.fetch_user_updates(@sync_id) {
         # pass
       }
