@@ -3,7 +3,6 @@ class CountListMembersWorker
   sidekiq_options queue: 'critical'
 
   def perform(id)
-    list = List.find(id)
-    list.update_attribute(:member_count, list.list_members.count)
+    List.find(id).count_members
   end
 end

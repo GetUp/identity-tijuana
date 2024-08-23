@@ -12,12 +12,11 @@
 #
 
 class Area < ApplicationRecord
-  include ReadWriteIdentity
-
-  self.primary_key = 'id'
+  audited
 
   has_many :area_zips
-  has_and_belongs_to_many :members, join_table: :area_memberships
+  has_many :area_memberships
+  has_many :members, through: :area_memberships
   has_and_belongs_to_many :canonical_addresses
 
   validates_uniqueness_of :code, scope: :area_type
@@ -32,8 +31,11 @@ class Area < ApplicationRecord
 
   def self.icons
     {
-      'pcon_new' => 'building-o',
-      'eer' => 'euro'
+      'pcon_new' => 'building',
+      'eer' => 'euro-sign',
+      'locality' => '',
+      'federal_electoral_district' => '',
+      'canada_province' => ''
     }
   end
 
@@ -56,7 +58,7 @@ class Area < ApplicationRecord
   end
 
   def icon
-    Area.icons[area_type]
+    area_icon || Area.icons[area_type]
   end
 
   def friendly_name

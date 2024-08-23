@@ -1,8 +1,15 @@
 class UpsertMember < IdentityBaseService
-  def initialize(payload, entry_point: '', ignore_name_change: false)
+  def initialize(payload,
+                 entry_point: '',
+                 ignore_name_change: false,
+                 new_member_opt_in: nil)
     @payload = payload
     @entry_point = entry_point
     @ignore_name_change = ignore_name_change
+    @new_member_opt_in = new_member_opt_in
+    if @new_member_opt_in.nil?
+      @new_member_opt_in = Settings.options.default_member_opt_in_subscriptions
+    end
     @retries = 0
   end
 
@@ -20,6 +27,9 @@ class UpsertMember < IdentityBaseService
       # Don't update further details if upsert data is older than member.updated_at
       next member if !member_created && payload[:updated_at].present? && payload[:updated_at] < member.updated_at
 
+      # Don't update if we've attempted to ghost the member!
+      raise "Attempt to upsert_member on a ghosted member (member_id: #{member.id}, data: #{payload})" if member.ghosting_started?
+
       upsert_emails(payload, member) if payload[:apply_email_address_changes] && payload.key?(:emails) && !member_created
       upsert_names(payload, member) if !ignore_name_change || member_created
       upsert_custom_fields(payload[:custom_fields], member) if payload.key?(:custom_fields)
@@ -27,11 +37,10 @@ class UpsertMember < IdentityBaseService
       upsert_addresses(payload[:addresses], member) if payload[:addresses].present?
 
       if Settings.options.allow_subscribe_via_upsert_member
-        upsert_subscriptions(payload[:subscriptions], member) if payload.key?(:subscriptions)
-
-        if member_created && Settings.options.default_member_opt_in_subscriptions
+        if member_created && @new_member_opt_in
           member.upsert_default_subscriptions(payload, entry_point)
         end
+        upsert_subscriptions(payload[:subscriptions], member) if payload.key?(:subscriptions)
       end
 
       upsert_skills(payload[:skills], member) if payload.key?(:skills)
