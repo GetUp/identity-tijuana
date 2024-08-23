@@ -50,4 +50,14 @@ class Settings
       "postcode_dash" => false
     }
   end
+
+  def self.redis_url
+    return ENV['REDIS_URL']
+  end
+
+  def self.redis
+    return {
+      "pool_size" => 5,
+    }
+  end
 end
