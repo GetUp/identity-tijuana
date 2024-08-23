@@ -1,11 +1,13 @@
 source 'https://rubygems.org'
 
+ruby '>= 3.1.6'
+
 gemspec
 gem 'rails', '~> 7.0.0'
+gem 'mysql2'
 gem 'pg'
 gem 'active_model_serializers'
 gem 'httpclient'
-gem 'sidekiq'
 
 group :development, :test do
   gem 'faker'
@@ -17,17 +19,25 @@ group :development, :test do
   gem 'database_cleaner-redis'
   gem 'factory_bot_rails'
   gem 'rubocop'
+  gem 'rubocop-factory_bot'
+  gem 'rubocop-performance'
+  gem 'rubocop-rails'
+  gem 'rubocop-rspec'
+  gem 'rubocop-rspec_rails'
   gem 'pry'
   gem 'pry-rails'
   gem 'pry-byebug'
   gem 'spring-commands-rspec'
   gem 'webmock'
 
-  # Id-specific deps for testing
-  gem 'audited'
+  # Identity requirements
+  gem 'audited', '~> 5.4.2'
   gem 'phony'
-  gem 'sidekiq-batch'
-  gem 'sidekiq-limit_fetch'
-  gem 'sidekiq-unique-jobs'
+  gem 'redis', '~> 4.8'
+  gem 'sidekiq', '~> 6.0'
+  gem 'sidekiq-batch', '~> 0.1.8'
+  gem 'sidekiq-killswitch'
+  gem 'sidekiq-unique-jobs', '~> 7.1.33'
   gem 'sprockets-rails'
+  gem 'zip'
 end
