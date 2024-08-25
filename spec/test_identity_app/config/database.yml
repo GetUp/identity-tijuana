@@ -1,12 +1,18 @@
 default: &default
-  adapter: postgresql
-  encoding: unicode
-  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
-  database: 'postgres://localhost/identity_tijuana_test_host'
+  primary:
+    adapter: postgresql
+    encoding: unicode
+    database: <%= ENV["DATABASE_URL"] %>
+    pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+  tijuana:
+    adapter: mysql
+    encoding: utf8mb4
+    collation: utf8mb4_unicode_ci
+    url: <%= ENV["TIJUANA_DATABASE_URL"] %>
+    pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+    migrations_paths: db/tijuana_migrate
 
 development:
   <<: *default
 test:
-  <<: *default
-production:
   <<: *default

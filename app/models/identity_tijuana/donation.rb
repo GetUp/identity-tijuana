@@ -2,19 +2,29 @@ module IdentityTijuana
   class Donation < ReadWrite
     self.table_name = 'donations'
     belongs_to :user
-    has_many :transactions, -> { order 'transactions.created_at' }
-    has_many :donation_upgrades, -> { order 'donation_upgrades.created_at' }
+    has_many(
+      :transactions,
+      -> { order 'transactions.created_at' },
+      inverse_of: 'donation',
+      dependent: nil
+    )
+    has_many(
+      :donation_upgrades,
+      -> { order 'donation_upgrades.created_at' },
+      inverse_of: 'donation',
+      dependent: nil
+    )
 
-    scope :updated_donations, -> (last_updated_at, last_id, exclude_from) {
+    scope :updated_donations, ->(last_updated_at, last_id, exclude_from) {
       where('updated_at > ? or (updated_at = ? and id > ?)', last_updated_at, last_updated_at, last_id)
-        .and(where('updated_at < ?', exclude_from))
+        .and(where(updated_at: ...exclude_from))
         .order('updated_at, id')
         .limit(Settings.tijuana.pull_batch_amount)
     }
 
-    scope :updated_donations_all, -> (last_updated_at, last_id, exclude_from) {
+    scope :updated_donations_all, ->(last_updated_at, last_id, exclude_from) {
       where('updated_at > ? or (updated_at = ? and id > ?)', last_updated_at, last_updated_at, last_id)
-        .and(where('updated_at < ?', exclude_from))
+        .and(where(updated_at: ...exclude_from))
     }
 
     def self.import(donation_id, sync_id)
@@ -22,7 +32,7 @@ module IdentityTijuana
       donation.import(sync_id)
     end
 
-    def import(sync_id)
+    def import(_sync_id)
       member = Member.find_by_external_id(:tijuana, user_id)
       if member.present?
         if member.ghosting_started?
@@ -53,17 +63,18 @@ module IdentityTijuana
             begin
               rd = Donations::RegularDonation.upsert!(regular_donation_hash)
               regular_donation_id = rd.id
-            rescue Exception => e
+            rescue StandardError => e
               Rails.logger.error "Tijuana donation sync id:#{id}, error: #{e.message}"
               raise
             end
           end
-          refund_transactions = transactions.map { |t|
-            t.refund_of_id && t.successful ? [ t.refund_of_id, t ] : nil
-          }.compact.to_h
-          transactions.each do | transaction |
+          refund_transactions = transactions.filter_map { |t|
+            t.refund_of_id && t.successful ? [t.refund_of_id, t] : nil
+          }.to_h
+          transactions.each do |transaction|
             next if transaction.refund_of_id
             next unless transaction.successful
+
             refund_transaction = refund_transactions[transaction.id]
             donation_hash = {
               # member_action_id: nil,
@@ -93,8 +104,9 @@ module IdentityTijuana
                   # are forced to offset the created_at date by however many
                   # microseconds are required to make it unique for that member
                   # and transaction amount.
-                  raise unless e.message =~ /has already been taken/
+                  raise unless e.message.include?('has already been taken')
                   raise if attempts > 1
+
                   tj_connection = TijuanaDonation.connection
                   preceding_duplicates = tj_connection.execute(%{
                     SELECT t.id
@@ -109,7 +121,7 @@ module IdentityTijuana
                   donation_hash[:created_at] = transaction.created_at + (offset_microseconds / 1000000.0)
                 end
               end
-            rescue Exception => e
+            rescue StandardError => e
               Rails.logger.error "Tijuana transaction sync id:#{transaction.id}, error: #{e.message}"
               raise
             end
@@ -119,5 +131,6 @@ module IdentityTijuana
     end
   end
 end
+
 class TijuanaDonation < IdentityTijuana::Donation
 end

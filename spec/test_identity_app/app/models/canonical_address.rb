@@ -1,5 +1,13 @@
 class CanonicalAddress < ApplicationRecord
-  include ReadWriteIdentity
+  has_many :addresses
+  has_and_belongs_to_many :areas
+
+  before_save do
+    self.search_text = [line1, line2, suburb, town, state, postcode, country].join(', ')
+  end
+
+  alias_attribute :zip, :postcode
+
   class << self
     def search(address = {})
       # There's no point looking for an empty address
@@ -25,10 +33,11 @@ class CanonicalAddress < ApplicationRecord
           address[:country]
         ].join(', ').upcase
 
+        core_schema = ApplicationRecord.connection.quote_table_name(Settings.databases.extensions_schemas.core)
         quoted_addr = ApplicationRecord.connection.quote(address_string)
         query = CanonicalAddress.where('search_text % ?', address_string)
                                 .order('similarity DESC')
-                                .select(Arel.sql("*, similarity(search_text, #{quoted_addr}) as similarity"))
+                                .select(Arel.sql("*, #{core_schema}.similarity(search_text, #{quoted_addr}) as similarity"))
 
         if address[:postcode].present?
           query = query.where(postcode: address[:postcode].to_s.upcase.delete(' '))

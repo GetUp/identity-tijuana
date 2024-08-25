@@ -1,4 +1,3 @@
-
 describe IdentityTijuana::API do
   before(:each) do
     allow(Settings).to receive_message_chain("tijuana.push_batch_amount") { 10 }
