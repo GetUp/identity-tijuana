@@ -177,7 +177,11 @@ module IdentityTijuana
     last_id = (Sidekiq.redis { |r| r.get 'tijuana:donations:last_id' } || 0).to_i
     users_dependent_data_cutoff = get_redis_date('tijuana:users:dependent_data_cutoff')
     updated_donations = IdentityTijuana::Donation.updated_donations(last_updated_at, last_id, users_dependent_data_cutoff)
-    updated_donations_all = IdentityTijuana::Donation.updated_donations_all(last_updated_at, last_id, users_dependent_data_cutoff)
+    updated_donations_all_count = IdentityTijuana::Donation.updated_donations_all(
+      last_updated_at,
+      last_id,
+      users_dependent_data_cutoff
+    ).count
     updated_donations.each do |donation|
       IdentityTijuana::Donation.import(donation.id, sync_id)
     end
@@ -199,12 +203,12 @@ module IdentityTijuana
           started_at: started_at,
           completed_at: DateTime.now,
           execution_time_seconds: execution_time_seconds,
-          remaining_behind: updated_donations_all.count
+          remaining_behind: updated_donations_all_count
         },
         false
     )
 
-    updated_donations.count < updated_donations_all.count
+    updated_donations.count < updated_donations_all_count
   end
 
   def self.fetch_tagging_updates(sync_id)
