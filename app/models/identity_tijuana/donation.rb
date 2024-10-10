@@ -72,7 +72,6 @@ module IdentityTijuana
             t.refund_of_id && t.successful ? [t.refund_of_id, t] : nil
           }.to_h
           transactions.each do |transaction|
-            next if transaction.refund_of_id
             next unless transaction.successful
 
             refund_transaction = refund_transactions[transaction.id]
