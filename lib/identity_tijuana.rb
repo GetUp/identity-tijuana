@@ -181,13 +181,14 @@ module IdentityTijuana
       last_updated_at,
       last_id,
       users_dependent_data_cutoff
-    ).count
+    ).count('DISTINCT donations.id')
+
     updated_donations.each do |donation|
       IdentityTijuana::Donation.import(donation.id, sync_id)
     end
 
     unless updated_donations.empty?
-      set_redis_date('tijuana:donations:last_updated_at', updated_donations.last.updated_at)
+      set_redis_date('tijuana:donations:last_updated_at', updated_donations.last.last_transaction_updated_at)
       Sidekiq.redis { |r| r.set 'tijuana:donations:last_id', updated_donations.last.id }
     end
 
@@ -199,7 +200,7 @@ module IdentityTijuana
           scope: 'tijuana:donations:last_updated_at',
           scope_limit: Settings.tijuana.pull_batch_amount,
           from: last_updated_at,
-          to: updated_donations.empty? ? nil : updated_donations.last.updated_at,
+          to: updated_donations.empty? ? nil : updated_donations.last.last_transaction_updated_at,
           started_at: started_at,
           completed_at: DateTime.now,
           execution_time_seconds: execution_time_seconds,
