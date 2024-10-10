@@ -297,6 +297,26 @@ module IdentityTijuana
         }
       )
 
+      # Import Notes from ID to TJ
+      if member.present?
+        notes = Note.where(member_id: member.id).order(:updated_at)
+
+        current_user_note = ""
+        if notes.present?
+          notes.each do |note|
+            text = note.text
+            current_user_note << text
+            current_user_note << "\n"
+          end
+
+          if user.notes != current_user_note
+            tj_changes[:notes] = current_user_note
+          end
+        else
+          tj_changes[:notes] = ''
+        end
+      end
+
       # Compare subscription to email.
       id_email_sub = member&.member_subscriptions&.find_by(subscription_id: Settings.tijuana.email_subscription_id)
       id_email_subbed = id_email_sub ? id_email_sub.unsubscribed_at.blank? : false
@@ -411,6 +431,11 @@ module IdentityTijuana
         fields_updated = tj_changes.keys.dup
         tj_changes.each do |key, value|
           case key
+          when :notes
+            ## Notes need to be saved beforehand
+            ## user.write_attribute(key, value) can't set value for notes to be nil
+            user.notes = value
+            user.save!
           when :email
             if value.blank?
               Rails.logger.warn("Member #{member&.id}, cannot erase the email address of an existing TJ user")
