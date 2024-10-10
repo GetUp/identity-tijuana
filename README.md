@@ -38,6 +38,6 @@ These commands assume you're in the project directory, and have the right versio
 - Copy [`.env.development.sample`](./.env.development.sample) to `.env.development`, and populate the required settings
 
 ## Running the test suite
-- Copy [`.env.test.sample`](./.env.test.sample) to `.env.test`, and update the `DATABASE_URL`
+- Copy [`spec/test_identity_app/.env.test.sample`](./spec/test_identity_app/.env.test.sample) to `spec/test_identity_app/.env.test`, and update the `DATABASE_URL`
 - Create a test database: `createdb identity_tijuana_test_host; RAILS_ENV=test bundle exec rake db:migrate`
 - `bundle exec rspec` runs all the tests
