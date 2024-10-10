@@ -79,25 +79,40 @@ module IdentityTijuana
               raise
             end
           end
+
           refund_transactions = transactions.filter_map { |t|
             t.refund_of_id && t.successful ? [t.refund_of_id, t] : nil
           }.to_h
-          transactions.each do |transaction|
-            next unless transaction.successful
 
-            refund_transaction = refund_transactions[transaction.id]
-            donation_hash = {
-              # member_action_id: nil,
-              member_id: member.id,
-              amount: (transaction.amount_in_cents || 0.0) / 100.0,
-              external_source: 'tijuana',
-              external_id: transaction.id,
-              # nonce: nil,
-              medium: payment_method,
-              refunded_at: refund_transaction ? refund_transaction.created_at : nil,
-              created_at: transaction.created_at,
-              updated_at: DateTime.now,
-            }
+          transactions.each do |transaction|
+            if transaction.successful
+              refund_transaction = refund_transactions[transaction.id]
+              donation_hash = {
+                # member_action_id: nil,
+                member_id: member.id,
+                amount: (transaction.amount_in_cents || 0.0) / 100.0,
+                external_source: 'tijuana',
+                external_id: transaction.id,
+                # nonce: nil,
+                medium: payment_method,
+                refunded_at: refund_transaction ? refund_transaction.created_at : nil,
+                created_at: transaction.created_at,
+                updated_at: DateTime.now,
+              }
+            else
+              donation_hash = {
+                # member_action_id: nil,
+                member_id: member.id,
+                amount: (transaction.amount_in_cents || 0.0) / 100.0,
+                # external_source: 'tijuana',
+                external_id: transaction.id,
+                # nonce: nil,
+                medium: payment_method,
+                failure_reason: transaction.message,
+                created_at: transaction.created_at,
+                updated_at: DateTime.now,
+              }
+            end
             donation_hash[:regular_donation_id] = regular_donation_id if regular_donation_id.present?
             begin
               attempts = 0
