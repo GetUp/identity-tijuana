@@ -367,29 +367,27 @@ module IdentityTijuana
       # puts "########## tj_changes = #{tj_changes.inspect}"
 
       unless member_hash.empty?
-        begin
-          fields_updated = member_hash.keys.dup
-          member_hash[:firstname] = member&.first_name unless member_hash.key?(:firstname) # Required param
-          member_hash[:lastname] = member&.last_name unless member_hash.key?(:lastname) # Required param
-          member_hash[:external_ids] = { tijuana: user&.id } # Needed for lookup
-          member_hash[:emails] = [{ email: user&.email }] if sync_type == :merge # Needed for lookup
-          member_hash[:ignore_phone_number_match] = true # Don't match by phone number, too error-prone
+        fields_updated = member_hash.keys.dup
+        member_hash[:firstname] = member&.first_name unless member_hash.key?(:firstname) # Required param
+        member_hash[:lastname] = member&.last_name unless member_hash.key?(:lastname) # Required param
+        member_hash[:external_ids] = { tijuana: user&.id } # Needed for lookup
+        member_hash[:emails] = [{ email: user&.email }] if sync_type == :merge # Needed for lookup
+        member_hash[:ignore_phone_number_match] = true # Don't match by phone number, too error-prone
 
+        begin
           new_member = UpsertMember.call(
             member_hash,
             entry_point: 'tijuana:fetch_updated_users',
             ignore_name_change: false
           )
 
-          if new_member.present?
-            if member.blank?
-              new_member.created_at = user&.created_at # Preserve TJ creation date
-              new_member.save!
-              member = new_member
-              Rails.logger.info("ID member #{member.id} created from TJ user #{user&.id}")
-            else
-              Rails.logger.info("ID member #{member.id} updated from TJ user #{user&.id}: #{fields_updated.join(' ')}")
-            end
+          if member.blank?
+            new_member.created_at = user&.created_at # Preserve TJ creation date
+            new_member.save!
+            member = new_member
+            Rails.logger.info("ID member #{member.id} created from TJ user #{user&.id}")
+          else
+            Rails.logger.info("ID member #{member.id} updated from TJ user #{user&.id}: #{fields_updated.join(' ')}")
           end
         rescue StandardError => e
           Rails.logger.error "Tijuana member sync id:#{user.id}, error: #{e.message}"
