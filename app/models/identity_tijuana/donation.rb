@@ -15,16 +15,27 @@ module IdentityTijuana
       dependent: nil
     )
 
-    scope :updated_donations, ->(last_updated_at, last_id, exclude_from) {
-      where('updated_at > ? or (updated_at = ? and id > ?)', last_updated_at, last_updated_at, last_id)
-        .and(where(updated_at: ...exclude_from))
-        .order('updated_at, id')
-        .limit(Settings.tijuana.pull_batch_amount)
+    # rubocop:disable Rails/SquishedSQLHeredocs
+    scope :updated_donations, ->(last_updated_at, _last_id, exclude_from) {
+      find_by_sql([<<-SQL, last_updated_at, exclude_from])
+        SELECT donations.id,
+               MAX(transactions.updated_at) AS last_transaction_updated_at,
+               MAX(transactions.id) AS last_transaction_updated_id
+        FROM donations
+        INNER JOIN transactions ON transactions.donation_id = donations.id
+        WHERE transactions.updated_at >= ?
+          AND transactions.updated_at < ?
+        GROUP BY donations.id
+        LIMIT #{Settings.tijuana.pull_batch_amount || 100}
+      SQL
     }
+    # rubocop:enable Rails/SquishedSQLHeredocs
 
-    scope :updated_donations_all, ->(last_updated_at, last_id, exclude_from) {
-      where('updated_at > ? or (updated_at = ? and id > ?)', last_updated_at, last_updated_at, last_id)
-        .and(where(updated_at: ...exclude_from))
+    scope :updated_donations_all, ->(last_updated_at, _last_id, exclude_from) {
+      joins(:transactions)
+        .where(transactions: { updated_at: last_updated_at.. })
+        .where(transactions: { updated_at: ...exclude_from })
+        .distinct
     }
 
     def self.import(donation_id, sync_id)
@@ -72,7 +83,6 @@ module IdentityTijuana
             t.refund_of_id && t.successful ? [t.refund_of_id, t] : nil
           }.to_h
           transactions.each do |transaction|
-            next if transaction.refund_of_id
             next unless transaction.successful
 
             refund_transaction = refund_transactions[transaction.id]
