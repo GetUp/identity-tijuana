@@ -616,4 +616,152 @@ describe IdentityTijuana do
       expect(Member.count).to eq(4)
     end
   end
+
+  context '#fetch_donation_updates' do
+    before(:each) do
+      user = FactoryBot.create(:tijuana_user)
+      user2 = FactoryBot.create(:tijuana_user)
+      @donation = FactoryBot.create(:tijuana_donation,
+                                    :amount_in_cents => 2500,
+                                    user: user,
+                                    content_module_id: 1,
+                                    payment_method: 'credit card',
+                                    frequency: 'weekly',
+                                    page_id: 1,
+                                    cover_processing_fee: 0,
+                                    :created_at => Date.parse('2022-03-10'),
+                                    :updated_at => Date.parse('2022-03-10'))
+      @donation2 = FactoryBot.create(:tijuana_donation,
+                                     :amount_in_cents => 1500,
+                                     user: user2,
+                                     content_module_id: 1,
+                                     payment_method: 'credit card',
+                                     frequency: 'weekly',
+                                     page_id: 1,
+                                     cover_processing_fee: 0,
+                                     :created_at => Date.parse('2023-03-10'),
+                                     :updated_at => Date.parse('2023-03-10'))
+    end
+
+    it 'it syncs succesful transactions as donations' do
+      FactoryBot.create(:tijuana_transaction,
+                        :donation => @donation,
+                        :successful => true,
+                        :amount_in_cents => 500,
+                        :created_at => Date.parse('2022-03-11'),
+                        :updated_at => Date.parse('2022-03-11'))
+
+      FactoryBot.create(:tijuana_transaction,
+                        :donation => @donation,
+                        :successful => true,
+                        :amount_in_cents => 1500,
+                        :created_at => Date.parse('2022-03-12'),
+                        :updated_at => Date.parse('2022-03-12'))
+
+      FactoryBot.create(:tijuana_transaction,
+                        :donation => @donation,
+                        :successful => false,
+                        :amount_in_cents => 1500,
+                        :created_at => Date.parse('2022-03-13'),
+                        :updated_at => Date.parse('2022-03-13'))
+
+      FactoryBot.create(:tijuana_transaction,
+                        :donation => @donation2,
+                        :successful => true,
+                        :amount_in_cents => 2500,
+                        :created_at => Date.parse('2023-03-14'),
+                        :updated_at => Date.parse('2023-03-14'))
+
+      FactoryBot.create(:tijuana_transaction,
+                        :donation => @donation2,
+                        :successful => true,
+                        :amount_in_cents => 1500,
+                        :created_at => Date.parse('2023-03-14'),
+                        :updated_at => Date.parse('2023-03-14'))
+
+      IdentityTijuana.fetch_user_updates(@sync_id) {
+        # pass
+      }
+
+      Sidekiq.redis { |r| r.set 'tijuana:users:dependent_data_cutoff', 2.days.ago }
+      IdentityTijuana.fetch_donation_updates(@sync_id) {
+        # pass
+      }
+
+      total_donations_amount = Donations::Donation.sum(:amount)
+
+      successful_amounts = (500 + 1500 + 2500 + 1500) / 100
+      expect(total_donations_amount).to eq(successful_amounts)
+
+      expect(Donations::Donation.count).to eq(4)
+      expect(Member.count).to eq(2)
+    end
+
+    it 'it syncs transactions with the same update_at timestamp' do
+      FactoryBot.create(:tijuana_transaction,
+                        :donation => @donation2,
+                        :successful => true,
+                        :amount_in_cents => 2500,
+                        :created_at => Date.parse('2023-03-14'),
+                        :updated_at => Date.parse('2023-03-14'))
+
+      FactoryBot.create(:tijuana_transaction,
+                        :donation => @donation2,
+                        :successful => true,
+                        :amount_in_cents => 1500,
+                        :created_at => Date.parse('2023-03-14'),
+                        :updated_at => Date.parse('2023-03-14'))
+
+      IdentityTijuana.fetch_user_updates(@sync_id) {
+        # pass
+      }
+
+      Sidekiq.redis { |r| r.set 'tijuana:users:dependent_data_cutoff', 2.days.ago }
+      IdentityTijuana.fetch_donation_updates(@sync_id) {
+        # pass
+      }
+
+      total_donations_amount = Donations::Donation.sum(:amount)
+
+      successful_amounts = (2500 + 1500) / 100
+      expect(total_donations_amount).to eq(successful_amounts)
+
+      expect(Donations::Donation.count).to eq(2)
+      expect(Member.count).to eq(2)
+    end
+
+    it 'it syncs refunds as negative donations and timestamps refunded donation with refunded_at' do
+      transaction = FactoryBot.create(:tijuana_transaction,
+                                      :donation => @donation,
+                                      :successful => true,
+                                      :amount_in_cents => 1500,
+                                      :created_at => Date.parse('2023-03-14'),
+                                      :updated_at => Date.parse('2023-03-14'))
+
+      FactoryBot.create(:tijuana_transaction,
+                        :donation => @donation,
+                        :refund_of_id => transaction.id,
+                        :successful => true,
+                        :amount_in_cents => -1500,
+                        :created_at => Date.parse('2023-03-15'),
+                        :updated_at => Date.parse('2023-03-15'))
+
+      IdentityTijuana.fetch_user_updates(@sync_id) {
+        # pass
+      }
+
+      Sidekiq.redis { |r| r.set 'tijuana:users:dependent_data_cutoff', 2.days.ago }
+      IdentityTijuana.fetch_donation_updates(@sync_id) {
+        # pass
+      }
+
+      total_donations_amount = Donations::Donation.sum(:amount)
+      refunded_donation = Donations::Donation.where.not(refunded_at: nil).sum(:amount)
+
+      expect(total_donations_amount).to eq(0)
+      expect(refunded_donation).to eq(1500 / 100)
+      expect(Donations::Donation.count).to eq(2)
+      expect(Member.count).to eq(2)
+    end
+  end
 end
