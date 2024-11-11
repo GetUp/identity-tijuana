@@ -133,6 +133,9 @@ module IdentityTijuana
         started_at: started_at,
         completed_at: DateTime.now,
         execution_time_seconds: execution_time_seconds,
+        exported_members_count: updated_member_ids.size,
+        exported_members: updated_member_ids,
+        users_dependent_data_cutoff: users_dependent_data_cutoff,
         remaining_behind: updated_users_all.count
       },
       false
