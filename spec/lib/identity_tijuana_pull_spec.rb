@@ -82,6 +82,17 @@ describe IdentityTijuana do
         expect(u.postcode.number).to eq(m.address.postcode)
         expect(u.postcode.state).to eq(m.address.state)
       end
+      it 'creates new users in Tijuana without postcode' do
+        m = FactoryBot.create(:member_with_the_lot)
+        m.addresses.create!({ postcode: "invalid" })
+        IdentityTijuana.fetch_user_updates(@sync_id) {
+          # pass
+        }
+        u = User.find_by(email: m.email)
+        expect(u).to have_attributes(first_name: m.first_name, last_name: m.last_name)
+        expect(u).to have_attributes(street_address: m.address.line1, suburb: m.address.town)
+        expect(u.postcode).to be_nil
+      end
     end
 
     context 'when merging' do
