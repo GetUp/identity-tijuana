@@ -70,7 +70,7 @@ module IdentityTijuana
     schedule_pull_batch(:fetch_donation_updates)
   end
 
-  def self.fetch_user_updates_impl(_sync_id)
+  def self.fetch_user_updates_impl(sync_id)
     started_at = DateTime.now
     last_updated_at = get_redis_date('tijuana:users:last_updated_at')
     last_id = (Sidekiq.redis { |r| r.get 'tijuana:users:last_id' } || 0).to_i
@@ -82,7 +82,7 @@ module IdentityTijuana
     end
 
     updated_users.each do |user|
-      MemberSync.import_user(user.id)
+      MemberSync.import_user(user.id, sync_id)
     end
 
     updated_member_ids = Member.connection.execute(
@@ -111,7 +111,7 @@ module IdentityTijuana
     ).pluck('member_id')
 
     updated_member_ids.each do |member_id|
-      MemberSync.export_member(member_id)
+      MemberSync.export_member(member_id, sync_id)
     end
 
     unless updated_users.empty?
