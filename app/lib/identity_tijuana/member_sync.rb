@@ -1,52 +1,70 @@
 module IdentityTijuana
   class MemberSync
     # Sync an ID member with TJ.
-    def self.export_member(member_id)
-      member = Member.find(member_id)
-      return if member.ghosting_started?
+    def self.export_member(member_id, sync_id)
+      sync_type = :unknown
+      begin
+        member = Member.find(member_id)
+        return if member.ghosting_started?
 
-      ext_id = MemberExternalId.find_by(system: 'tijuana', member: member)
-      user_id = ext_id.external_id if ext_id.present?
-      if user_id.present?
-        user = User.find_by(id: user_id)
-        ext_id.destroy! if user.blank?
-      end
-      if user.blank?
-        sync_type = :merge
-        email = member.email
-        user = User.find_by(email: email) if email.present?
-        sync_type = :create if user.blank?
-      else
-        sync_type = :update
-      end
+        ext_id = MemberExternalId.find_by(system: 'tijuana', member: member)
+        user_id = ext_id.external_id if ext_id.present?
+        if user_id.present?
+          user = User.find_by(id: user_id)
+          ext_id.destroy! if user.blank?
+        end
+        if user.blank?
+          sync_type = :merge
+          email = member.email
+          user = User.find_by(email: email) if email.present?
+          sync_type = :create if user.blank?
+        else
+          sync_type = :update
+        end
 
-      sync(user, member, sync_type)
+        sync(user, member, sync_type, sync_id, :export_member)
+      rescue StandardError => e
+        Rails.logger.error "[IdentityTijuana::export_member] failed: " \
+                           "#{e.message} member_id=#{member_id}" \
+                           "(sync_id=#{sync_id}, sync_type=#{sync_type}, " \
+                           "sync_direction=export_member)"
+        raise e
+      end
     end
 
     # Sync a TJ user with ID.
-    def self.import_user(user_id)
-      user = User.find(user_id)
-      member = Member.find_by_external_id(:tijuana, user_id)
+    def self.import_user(user_id, sync_id)
+      sync_type = :unknown
+      begin
+        user = User.find(user_id)
+        member = Member.find_by_external_id(:tijuana, user_id)
 
-      if member.blank?
-        sync_type = :merge
-        cleansed_email = Cleanser.cleanse_email(user.email)
-        cleansed_email = nil unless Cleanser.accept_email?(cleansed_email)
-        member = Member.find_by(email: cleansed_email) if cleansed_email.present?
-      else
-        sync_type = :update
-      end
-
-      if member.blank?
-        sync_type = :create
-      else
-        if member.ghosting_started?
-          Rails.logger.warn "Tijuana member (#{user.id}) is ghosted (#{member.id}), not updating"
-          return
+        if member.blank?
+          sync_type = :merge
+          cleansed_email = Cleanser.cleanse_email(user.email)
+          cleansed_email = nil unless Cleanser.accept_email?(cleansed_email)
+          member = Member.find_by(email: cleansed_email) if cleansed_email.present?
+        else
+          sync_type = :update
         end
-      end
 
-      sync(user, member, sync_type)
+        if member.blank?
+          sync_type = :create
+        else
+          if member.ghosting_started?
+            Rails.logger.warn "Tijuana member (#{user.id}) is ghosted (#{member.id}), not updating (sync_id=#{sync_id}, sync_type=#{sync_type}, sync_direction=import_user)"
+            return
+          end
+        end
+
+        sync(user, member, sync_type, sync_id, :import_user)
+      rescue StandardError => e
+        Rails.logger.error "[IdentityTijuana::import_user] failed: " \
+                           "#{e.message} user_id=#{user_id}" \
+                           "(sync_id=#{sync_id}, sync_type=#{sync_type}, " \
+                           "sync_direction=import_user)"
+        raise e
+      end
     end
 
     # Parameters for searching the active_record_audits table.
@@ -187,7 +205,7 @@ module IdentityTijuana
     end
 
     # This function performs a sync between a user and a member.
-    def self.sync(user, member, sync_type)
+    def self.sync(user, member, sync_type, sync_id, sync_direction)
       member_hash = {}
       tj_changes = {}
       user_updated_at = user&.updated_at || Time.zone.at(0)
@@ -366,34 +384,48 @@ module IdentityTijuana
       # puts "########## member_hash = #{member_hash.inspect}"
       # puts "########## tj_changes = #{tj_changes.inspect}"
 
+      # Check for no-op
+      if member_hash.empty? && tj_changes.empty?
+        if sync_type == :create
+          record = sync_direction == :export_member ? "TJ user" : "ID member"
+          Rails.logger.error "[IdentityTijuana::sync] failed " \
+                             "to create #{record} record" \
+                             "(sync_id=#{sync_id}, sync_type=#{sync_type}" \
+                             ", sync_direction=#{sync_direction})" \
+                             "- #{[member_info, user_info].compact.join(', ')}"
+        else
+          member_info = "ID: member_id=#{member.id}" if member&.id
+          user_info = "TJ: user_id=#{user.id}" if user&.id
+          Rails.logger.info "[IdentityTijuana::sync] no changes detected " \
+                            "(sync_id=#{sync_id}, sync_type=#{sync_type}" \
+                            ", sync_direction=#{sync_direction})" \
+                            "- #{[member_info, user_info].compact.join(', ')}"
+        end
+      end
+
       unless member_hash.empty?
-        begin
-          fields_updated = member_hash.keys.dup
-          member_hash[:firstname] = member&.first_name unless member_hash.key?(:firstname) # Required param
-          member_hash[:lastname] = member&.last_name unless member_hash.key?(:lastname) # Required param
-          member_hash[:external_ids] = { tijuana: user&.id } # Needed for lookup
-          member_hash[:emails] = [{ email: user&.email }] if sync_type == :merge # Needed for lookup
-          member_hash[:ignore_phone_number_match] = true # Don't match by phone number, too error-prone
+        fields_updated = member_hash.keys.dup
+        member_hash[:firstname] = member&.first_name unless member_hash.key?(:firstname) # Required param
+        member_hash[:lastname] = member&.last_name unless member_hash.key?(:lastname) # Required param
+        member_hash[:external_ids] = { tijuana: user&.id } # Needed for lookup
+        member_hash[:emails] = [{ email: user&.email }] if sync_type == :merge # Needed for lookup
+        member_hash[:ignore_phone_number_match] = true # Don't match by phone number, too error-prone
 
-          new_member = UpsertMember.call(
-            member_hash,
-            entry_point: 'tijuana:fetch_updated_users',
-            ignore_name_change: false
-          )
+        new_member = UpsertMember.call(
+          member_hash,
+          entry_point: 'tijuana:fetch_updated_users',
+          ignore_name_change: false
+        )
 
-          if new_member.present?
-            if member.blank?
-              new_member.created_at = user&.created_at # Preserve TJ creation date
-              new_member.save!
-              member = new_member
-              Rails.logger.info("ID member #{member.id} created from TJ user #{user&.id}")
-            else
-              Rails.logger.info("ID member #{member.id} updated from TJ user #{user&.id}: #{fields_updated.join(' ')}")
-            end
+        if new_member.present?
+          if member.blank?
+            new_member.created_at = user&.created_at # Preserve TJ creation date
+            new_member.save!
+            member = new_member
+            Rails.logger.info("[IdentityTijuana::sync] ID member #{member.id} created from TJ user #{user&.id} (sync_id=#{sync_id}, sync_type=#{sync_type}, sync_direction=#{sync_direction})")
+          else
+            Rails.logger.info("[IdentityTijuana::sync] ID member #{member.id} updated from TJ user #{user&.id}: #{fields_updated.join(' ')} (sync_id=#{sync_id}, sync_type=#{sync_type}, sync_direction=#{sync_direction})")
           end
-        rescue StandardError => e
-          Rails.logger.error "Tijuana member sync id:#{user.id}, error: #{e.message}"
-          raise
         end
       end
 
@@ -401,19 +433,20 @@ module IdentityTijuana
         user_created = false
         if user.blank?
           if tj_changes[:email].blank?
-            Rails.logger.warn("Member #{member&.id} has no email address and cannot be synchronized to TJ")
+            Rails.logger.warn("[IdentityTijuana::sync] Member #{member&.id} has no email address and cannot be synchronized to TJ (sync_id=#{sync_id}, sync_type=#{sync_type}, sync_direction=#{sync_direction})")
             return
           end
           user = User.new
           user.created_at = member&.created_at # Preserve ID creation date
           user_created = true
         end
+
         fields_updated = tj_changes.keys.dup
         tj_changes.each do |key, value|
           case key
           when :email
             if value.blank?
-              Rails.logger.warn("Member #{member&.id}, cannot erase the email address of an existing TJ user")
+              Rails.logger.warn("[IdentityTijuana::sync] Member #{member&.id} has no email address - cannot erase the email address of an existing TJ user (sync_id=#{sync_id}, sync_type=#{sync_type}, sync_direction=#{sync_direction})")
               next
             else
               user.write_attribute(key, value)
@@ -445,13 +478,14 @@ module IdentityTijuana
             user.write_attribute(key, value)
           end
         end
+
         if user_created
           user.save!
-          MemberExternalId.create!(member: member, system: 'tijuana', external_id: user.id) if user_created
-          Rails.logger.info("TJ user #{user.id} created from ID member #{member&.id}")
+          MemberExternalId.create!(member: member, system: 'tijuana', external_id: user.id)
+          Rails.logger.info("[IdentityTijuana::sync] TJ user #{user.id} created from ID member #{member&.id} (sync_id=#{sync_id}, sync_type=#{sync_type}, sync_direction=#{sync_direction})")
         elsif fields_updated.count > 0
           user.save!
-          Rails.logger.info("TJ user #{user.id} updated from ID member #{member&.id}: #{fields_updated.join(' ')}")
+          Rails.logger.info("[IdentityTijuana::sync] TJ user #{user.id} updated from ID member #{member&.id}: #{fields_updated.join(' ')} (sync_id=#{sync_id}, sync_type=#{sync_type}, sync_direction=#{sync_direction})")
         end
       end
     end
@@ -471,7 +505,7 @@ module IdentityTijuana
           nil
         end
       rescue => e
-        Rails.logger.warn "#{e.class.name} occurred while standardising phone number #{phone_number}"
+        Rails.logger.warn "[IdentityTijuana::standardise_phone_number] #{e.class.name} occurred while standardising phone number #{phone_number}"
         nil
       end
     end
