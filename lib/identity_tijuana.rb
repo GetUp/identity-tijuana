@@ -85,33 +85,32 @@ module IdentityTijuana
       MemberSync.import_user(user.id, sync_id)
     end
 
-    updated_member_ids = Member.connection.execute(
-      <<~SQL.squish
-          SELECT id as member_id
-        FROM members
-        WHERE updated_at > '#{last_updated_at}'
-        AND updated_at <= '#{users_dependent_data_cutoff}'
-        UNION
-        SELECT DISTINCT member_id
-        FROM addresses
-        WHERE updated_at > '#{last_updated_at}'
-        AND updated_at <= '#{users_dependent_data_cutoff}'
-        UNION
-        SELECT DISTINCT member_id
-        FROM member_subscriptions
-        WHERE updated_at > '#{last_updated_at}'
-        AND updated_at <= '#{users_dependent_data_cutoff}'
-        UNION
-        SELECT DISTINCT member_id
-        FROM phone_numbers
-        WHERE updated_at > '#{last_updated_at}'
-        AND updated_at <= '#{users_dependent_data_cutoff}'
-        ORDER BY member_id;
-      SQL
+    union_query = <<~SQL.squish
+      SELECT id AS member_id FROM members
+      WHERE updated_at > :last_updated_at AND updated_at <= :users_dependent_data_cutoff
+      UNION
+      SELECT DISTINCT member_id FROM addresses
+      WHERE updated_at > :last_updated_at AND updated_at <= :users_dependent_data_cutoff
+      UNION
+      SELECT DISTINCT member_id FROM member_subscriptions
+      WHERE updated_at > :last_updated_at AND updated_at <= :users_dependent_data_cutoff
+      UNION
+      SELECT DISTINCT member_id FROM phone_numbers
+      WHERE updated_at > :last_updated_at AND updated_at <= :users_dependent_data_cutoff
+      ORDER BY member_id
+    SQL
+
+    updated_member_ids = Member.connection.select_all(
+      ActiveRecord::Base.sanitize_sql(
+        [union_query, { last_updated_at: last_updated_at, users_dependent_data_cutoff: users_dependent_data_cutoff }]
+      )
     ).pluck('member_id')
 
-    updated_member_ids.each do |member_id|
-      MemberSync.export_member(member_id, sync_id)
+    updated_members = Member.includes(:phone_numbers, :addresses, :member_subscriptions)
+                            .where(id: updated_member_ids)
+
+    updated_members.each do |member|
+      MemberSync.export_member(member, sync_id)
     end
 
     unless updated_users.empty?

@@ -1,10 +1,9 @@
 module IdentityTijuana
   class MemberSync
     # Sync an ID member with TJ.
-    def self.export_member(member_id, sync_id)
+    def self.export_member(member, sync_id)
       sync_type = :unknown
       begin
-        member = Member.find(member_id)
         return if member.ghosting_started?
 
         ext_id = MemberExternalId.find_by(system: 'tijuana', member: member)
