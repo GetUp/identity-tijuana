@@ -398,31 +398,13 @@ module IdentityTijuana
       )
 
       # Compare email address.
-      abort_sync = false
       compare_fields(
         sync_type, [member&.email], [user&.email],
         Proc.new { get_id_change_date(member, :email, member&.updated_at) },
         Proc.new { user_updated_at },
         Proc.new { member_hash[:emails] = [{ email: user.email }] },
-        Proc.new {
-          existing_user_with_same_email = User.find_by(email: member.email)
-          if existing_user_with_same_email.present?
-            # We can't update the email in TJ if another user already exists
-            # with that email address. In that scenario, the current user
-            # needs to be unlinked from the member, and we need to ensure
-            # that the other user is linked instead.
-            MemberExternalId.where(
-              member: member,
-              system: 'tijuana',
-              external_id: user.id.to_s
-            ).destroy_all
-            abort_sync = true
-          else
-            tj_changes[:email] = member.email
-          end
-        }
+        Proc.new { tj_changes[:email] = member.email }
       )
-      return if abort_sync
 
       # Compare mobile number.
       id_mobile = member&.phone_numbers&.mobile&.first
@@ -579,7 +561,24 @@ module IdentityTijuana
         member_hash[:lastname] = member&.last_name unless member_hash.key?(:lastname) # Required param
         member_hash[:external_ids] = { tijuana: user&.id } # Needed for lookup
         member_hash[:emails] = [{ email: user&.email }] if sync_type == :merge # Needed for lookup
+        member_hash[:apply_email_address_changes] = true # Ensure email address changes are honored
         member_hash[:ignore_phone_number_match] = true # Don't match by phone number, too error-prone
+
+        if member_hash.key?(:emails)
+          email = member_hash[:emails][0][:email]
+          if member.present?
+            # Identity does *not* require email addresses to be
+            # unique in the database (only from the UI?), so check
+            # for it up front and raise an intelligible exception if
+            # conflicts found.
+            conflicting_members = Member.where(email: email).where.not(id: member.id)
+            if conflicting_members.count > 0
+              raise "Email conflict: Id members " \
+                    "#{conflicting_members.pluck(:id)} already have " \
+                    "email address #{email}, bailing out"
+            end
+          end
+        end
 
         new_member = UpsertMember.call(
           member_hash,
@@ -617,8 +616,17 @@ module IdentityTijuana
               Rails.logger.warn("[IdentityTijuana::sync] Member #{member&.id} has no email address - cannot erase the email address of an existing TJ user (sync_id=#{sync_id}, sync_type=#{sync_type}, sync_direction=#{sync_direction})")
               next
             else
-              user.write_attribute(key, value)
+              # TJ does require email addresses to be unique, but lets
+              # check for it up front and raise an intelligible
+              # exception if found.
+              conflicting_users = User.where(email: value).where.not(id: user.id)
+              if conflicting_users.count > 0
+                raise "Email conflict: TJ users " \
+                      "#{conflicting_users.pluck(:id)} already have " \
+                      "email address #{email}, bailing out"
+              end
             end
+            user.write_attribute(key, value)
           when :postcode
             user.postcode = Postcode.find_by(number: value)
           when :state, :reason
