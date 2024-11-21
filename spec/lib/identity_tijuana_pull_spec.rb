@@ -1,5 +1,14 @@
 require 'rails_helper'
 
+# IMPORTANT NOTE! YES YOU!
+#
+# Please do not add more tests here that are actually testing the
+# MemberSync class. Do that in `spec/app/lib/member_sync_spec.rb`
+# instead. It'll be easier, faster and more reliable.
+#
+# This file should only be used for tests for code that lives in
+# `lib/identity_tijuana.rb`. Domo.
+
 describe IdentityTijuana do
   before(:all) do
     @sync_id = 1
