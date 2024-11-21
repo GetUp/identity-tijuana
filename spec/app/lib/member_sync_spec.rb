@@ -1,5 +1,7 @@
 require 'rails_helper'
 
+RSpec::Matchers.define_negated_matcher :not_change, :change
+
 describe IdentityTijuana::MemberSync do
   before(:each) do
     allow(Settings).to receive_message_chain("tijuana.email_subscription_id") {
@@ -377,6 +379,76 @@ describe IdentityTijuana::MemberSync do
         .to have_attributes(first_name: u2.first_name)
       expect(Member.first.get_external_ids('tijuana').sort)
         .to eq([u1.id.to_s, u2.id.to_s])
+    end
+  end
+
+  context '#sync' do
+    context 'changing email addresses' do
+      it 'import updates a linked Identity member email from Tijuana' do
+        m = FactoryBot.create(:member, email: 'old@example.com')
+        u = FactoryBot.create(:tijuana_user, email: 'new@example.com')
+        MemberExternalId.create!(
+          system: 'tijuana',
+          member: m,
+          external_id: u.id.to_s
+        )
+
+        IdentityTijuana::MemberSync.sync(u, m, :update, 0, :import_member)
+
+        expect(User.first).to have_attributes(email: 'new@example.com')
+        expect(Member.first).to have_attributes(email: 'new@example.com')
+      end
+
+      it 'import fails if a Id member with the same email already exists' do
+        m1 = FactoryBot.create(:member, email: 'old@example.com')
+        m2 = FactoryBot.create(:member, email: 'new@example.com')
+        u = FactoryBot.create(:tijuana_user, email: 'new@example.com')
+        MemberExternalId.create!(
+          system: 'tijuana',
+          member: m1,
+          external_id: u.id.to_s
+        )
+
+        expect {
+          IdentityTijuana::MemberSync.sync(u, m1, :update, 0, :import_member)
+        }.to raise_error(/^Email conflict: Id members/)
+         .and not_change(m1, :email)
+         .and not_change(m2, :email)
+         .and not_change(u, :email)
+      end
+
+      it 'export updates a linked Tijuana user email from Identity' do
+        u = FactoryBot.create(:tijuana_user, email: 'old@example.com')
+        m = FactoryBot.create(:member, email: 'new@example.com')
+        MemberExternalId.create!(
+          system: 'tijuana',
+          member: m,
+          external_id: u.id.to_s
+        )
+
+        IdentityTijuana::MemberSync.sync(u, m, :update, 0, :export_member)
+
+        expect(User.first).to have_attributes(email: 'new@example.com')
+        expect(Member.first).to have_attributes(email: 'new@example.com')
+      end
+
+      it 'export fails if a TJ user with the same email already exists' do
+        u1 = FactoryBot.create(:tijuana_user, email: 'old@example.com')
+        u2 = FactoryBot.create(:tijuana_user, email: 'new@example.com')
+        m = FactoryBot.create(:member, email: 'new@example.com')
+        MemberExternalId.create!(
+          system: 'tijuana',
+          member: m,
+          external_id: u1.id.to_s
+        )
+
+        expect {
+          IdentityTijuana::MemberSync.sync(u1, m, :update, 0, :export_member)
+        }.to raise_error(/^Email conflict: TJ users/)
+          .and not_change(u1, :email)
+          .and not_change(u2, :email)
+          .and not_change(m, :email)
+      end
     end
   end
 end
