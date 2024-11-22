@@ -6,12 +6,14 @@ module IdentityTijuana
       begin
         return if member.ghosting_started?
 
-        ext_ids = MemberExternalId.where(system: 'tijuana', member: member).to_a
         # Destroy any dangling external ID references, remove any
         # external ids from the list if not found
-        ext_ids.select do |ext_id|
+        ext_ids = MemberExternalId.where(
+          system: 'tijuana',
+          member: member
+        ).select do |ext_id|
           user = User.find_by(id: ext_id.external_id.to_i)
-          if user.blank?
+          if user.nil?
             Rails.logger.info(
               "[IdentityTijuana::export_member]: " \
               "Removing dangling external id for Id member #{member.id}, " \
@@ -21,7 +23,7 @@ module IdentityTijuana
             )
             ext_id.destroy!
           end
-          user.present?
+          user.present? # return value for `select` call
         end
         if ext_ids.count == 0
           # XXX this will fail for de-normalised and/or cleaned emails
