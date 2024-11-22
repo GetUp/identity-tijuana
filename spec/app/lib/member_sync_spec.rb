@@ -273,7 +273,7 @@ describe IdentityTijuana::MemberSync do
       expect(m.get_external_ids('tijuana').count).to eq(2)
     end
 
-    it 'removes all dangling external ids' do
+    it 'removes any dangling external id links' do
       u = FactoryBot.create(:tijuana_user, first_name: 'Alice')
       m = FactoryBot.create(:member, email: u.email, first_name: 'Bob')
       MemberExternalId.create!(
@@ -286,6 +286,16 @@ describe IdentityTijuana::MemberSync do
       IdentityTijuana::MemberSync.export_member(m, 0)
 
       expect(User.first).to have_attributes(first_name: 'Bob')
+      expect(m.get_external_ids('tijuana').count).to eq(1)
+    end
+
+    it 'creates a new user after removing all (dangling) external ids' do
+      m = FactoryBot.create(:member)
+      MemberExternalId.create!(system: 'tijuana', member: m, external_id: 0)
+
+      IdentityTijuana::MemberSync.export_member(m, 0)
+
+      expect(User.first).to have_attributes(email: m.email)
       expect(m.get_external_ids('tijuana').count).to eq(1)
     end
   end
