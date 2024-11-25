@@ -150,10 +150,21 @@ class UpsertMember < IdentityBaseService
 
   def upsert_addresses(addresses, member)
     address = addresses.first
-    # Don't update with any address containing only empty strings
-    if address.except(:country).values.any?(&:present?)
-      member.update_address(address)
+
+    # Skip update if the address contains only `country`
+    # or if all other attributes are blank.
+    return if address.keys == [:country]
+    return if address.except(:country).values.all?(&:blank?)
+
+    # Skip update if all attributes are nil except a single one,
+    # and that attribute matches the existing member's address.
+    specified_fields = address.reject { |_k, v| v.nil? }
+    if specified_fields.size == 1 && member.address
+      key, value = specified_fields.first
+      return if member.address.send(key) == value
     end
+
+    member.update_address(address)
   end
 
   def upsert_subscriptions(subscriptions, member)
