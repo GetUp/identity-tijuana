@@ -210,14 +210,10 @@ module IdentityTijuana
 
       matching_emails = users.select { |user|
         # Need to normalise the email to match the normalisation Id
-        # would do, but as-is, i.e. without any typo correction
-        #
-        # XXX shamefully copied from Cleanser
-        user_email = user.email.downcase
-        user_email = user_email.gsub(/\s/, '')
-        user_email = user_email.gsub('%40', '@') # remove html entities
-
-        user_email == member.email
+        # would do, but as-is, i.e. without any typo correction. So
+        # `example@gmail.com` should match `EXAMPLE@GMAIL.COM` but not
+        # `example@gamil.com` (note the typo).
+        Cleanser.normalise_email(user.email) == member.email
       }
 
       primary = matching_emails.first
@@ -400,11 +396,21 @@ module IdentityTijuana
       )
 
       # Compare email address.
+      #
+      # Note that UpsertService will call Cleanser.cleanse_email on
+      # any email that gets passed through to it, so cleanse TJ user's
+      # email up front to see if it's worth doing.
       compare_fields(
-        sync_type, [member&.email], [user&.email],
+        sync_type,
+        [member&.email], # Id normalises its email addresses, so this is clean
+        [Cleanser.cleanse_email(user&.email)], # TJ does not, so scrub it
         Proc.new { get_id_change_date(member, :email, member&.updated_at) },
         Proc.new { user_updated_at },
-        Proc.new { member_hash[:emails] = [{ email: user.email }] },
+        Proc.new {
+          # Don't need to scrub TJ user email here, UpsertService will
+          # do it for us if needed
+          member_hash[:emails] = [{ email: user.email }]
+        },
         Proc.new { tj_changes[:email] = member.email }
       )
 
