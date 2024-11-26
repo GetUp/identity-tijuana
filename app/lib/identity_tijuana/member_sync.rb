@@ -109,7 +109,16 @@ module IdentityTijuana
       end
       # Iterate through the relevant audit log list, moving backwards in time
       # until we find a change to the field or fields in question.
-      member.send(audit_list_name).where(auditable_type: auditable_type).reverse_each do |audit|
+      # Note that we use `reorder` to remove all prior ordering clauses.
+      # ActiveRecordAudit automatically applies `ORDER BY version ASC` when the `order`
+      # method is used. While we could override this with `order(version: :desc)`,
+      # using `reorder` with `created_at: :desc` is better aligned in terms
+      # "iterating backwards in time" through the audit logs.
+      # Additionally, `created_at` is an indexed column as opposed to `version`.
+      member.send(audit_list_name)
+            .where(auditable_type: auditable_type)
+            .reorder(created_at: :desc)
+            .each do |audit|
         # Check ancillary matching field, where required.
         if !ancillary_match_value.nil?
           case auditable_type
@@ -117,12 +126,12 @@ module IdentityTijuana
             phone_number_type =
               audit.audited_changes['phone_type'] ||
               PhoneNumber.find_by(id: audit.auditable_id).try(:phone_type)
-            next unless phone_number_type == ancillary_match_value
+            next unless phone_number_type.to_sym == ancillary_match_value
           when 'MemberSubscription'
             audit_subscription_id =
               audit.audited_changes['subscription_id'] ||
               MemberSubscription.find_by(id: audit.auditable_id).try(:subscription_id)
-            next unless audit_subscription_id == ancillary_match_value
+            next unless audit_subscription_id.to_i == ancillary_match_value.to_i
           end
         end
         # Search for changes to *any* of the fields in the associated list. For
