@@ -24,7 +24,7 @@ module IdentityTijuana
         sync(user, member, sync_type, sync_id, :export_member)
       rescue StandardError => e
         Rails.logger.error "[IdentityTijuana::export_member] failed: " \
-                           "#{e.message} member_id=#{member_id}" \
+                           "#{e.message} member_id=#{member.id}" \
                            "(sync_id=#{sync_id}, sync_type=#{sync_type}, " \
                            "sync_direction=export_member)"
         raise e
