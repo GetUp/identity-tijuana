@@ -627,4 +627,199 @@ describe IdentityTijuana do
       expect(Member.count).to eq(4)
     end
   end
+
+  context '#fetch_donation_updates' do
+    before(:each) do
+      @donations = []
+      @regular_donations = []
+
+      5.times do
+        user = FactoryBot.create(:tijuana_user)
+        donation = FactoryBot.create(
+          :tijuana_donation,
+          amount_in_cents: Faker::Number.between(from: 1000, to: 10_000),
+          user: user,
+          content_module_id: Faker::Number.between(from: 1, to: 5),
+          payment_method: Faker::Finance.credit_card,
+          frequency: %w[one_off weekly monthly yearly].sample,
+          page_id: Faker::Number.between(from: 1, to: 5),
+          cover_processing_fee: Faker::Boolean.boolean,
+          created_at: Faker::Date.between(from: '2022-01-01',
+                                          to: '2022-03-03`'),
+          updated_at: Faker::Date.between(from: '2022-03-03',
+                                          to: Time.zone.today - 2.days)
+        )
+        @donations << donation
+        if donation.frequency != 'one_off'
+          @regular_donations << donation
+        end
+      end
+
+      100.times do
+        donation = @donations.sample
+        successful = Faker::Boolean.boolean
+        updated_at = Faker::Date.between(
+          from: donation.created_at,
+          to: Time.zone.today - 2.days
+        ).to_datetime
+
+        transaction = FactoryBot.create(
+          :tijuana_transaction,
+          donation: donation,
+          successful: successful,
+          amount_in_cents: Faker::Number.between(from: 500, to: 5000),
+          created_at: updated_at,
+          updated_at: updated_at
+        )
+
+        # Create a refund for some transactions
+        if successful && [true, false].sample
+          FactoryBot.create(
+            :tijuana_transaction,
+            donation: donation,
+            refund_of_id: transaction.id,
+            successful: true,
+            amount_in_cents: -transaction.amount_in_cents,
+            created_at: transaction.created_at + 1.day,
+            updated_at: transaction.updated_at + 1.day
+          )
+        end
+      end
+    end
+
+    it 'upserts regular donations for non-one-off frequencies' do
+      IdentityTijuana.fetch_user_updates(@sync_id) {
+        # pass
+      }
+
+      Sidekiq.redis { |r|
+        r.set 'tijuana:users:dependent_data_cutoff',
+              2.days.ago
+      }
+      IdentityTijuana.fetch_donation_updates(@sync_id) {
+        # pass
+      }
+
+      @regular_donations.each do |donation|
+        regular_donation = Donations::RegularDonation.find_by(external_id: donation.id)
+        member = Member.find_by_external_id(:tijuana, donation.user_id)
+        expect(regular_donation).to be_present
+        expect(regular_donation.member_id).to eq(member.id)
+        expect(regular_donation.started_at).to eq(donation.created_at)
+        expect(regular_donation.ended_at).to eq(donation.cancelled_at || (donation.active ? nil : donation.updated_at))
+        expect(regular_donation.frequency).to eq(donation.frequency)
+        expect(regular_donation.medium).to eq(donation.payment_method)
+        expect(regular_donation.source).to eq('tijuana')
+        expect(regular_donation.current_amount).to eq(donation.amount_in_cents / 100.0)
+        expect(regular_donation.created_at).to eq(donation.created_at)
+      end
+    end
+
+    it 'syncs successful transactions as donations' do
+      IdentityTijuana.fetch_user_updates(@sync_id) {
+        # pass
+      }
+
+      Sidekiq.redis { |r|
+        r.set 'tijuana:users:dependent_data_cutoff',
+              2.days.ago
+      }
+      IdentityTijuana.fetch_donation_updates(@sync_id) {
+        # pass
+      }
+
+      total_donations_amount = Donations::Donation.sum(:amount)
+
+      amounts_in_cents = IdentityTijuana::Transaction.where(successful: true)
+                                                     .sum(:amount_in_cents)
+                                                     .to_f
+
+      expect(total_donations_amount).to eq(amounts_in_cents / 100)
+
+      expect(Donations::Donation.count).to eq(
+        IdentityTijuana::Transaction.where(successful: true).count
+      )
+    end
+
+    it 'syncs refunds as negative donations and timestamps refunded donation with refunded_at' do
+      IdentityTijuana.fetch_user_updates(@sync_id) {
+        # pass
+      }
+
+      Sidekiq.redis { |r|
+        r.set 'tijuana:users:dependent_data_cutoff',
+              2.days.ago
+      }
+      IdentityTijuana.fetch_donation_updates(@sync_id) {
+        # pass
+      }
+      total_donations_refund_amount = Donations::Donation
+                                      .where
+                                      .not(refunded_at: nil)
+                                      .sum(:amount)
+      total_donations_refund_count = Donations::Donation
+                                     .where
+                                     .not(refunded_at: nil)
+                                     .count()
+
+      total_transactions_refund_amount = IdentityTijuana::Transaction
+                                         .where
+                                         .not(refund_of_id: nil)
+                                         .sum(:amount_in_cents)
+      total_transactions_refund_count = IdentityTijuana::Transaction
+                                        .where
+                                        .not(refund_of_id: nil)
+                                        .count()
+
+      expect(total_donations_refund_amount.abs * 100).to eq(
+        total_transactions_refund_amount.abs
+      )
+      expect(total_donations_refund_count).to eq(
+        total_transactions_refund_count
+      )
+    end
+
+    it 'syncs successful transactions with the same updated_at as donations' do
+      selected_donations = @donations.sample(3)
+
+      selected_donations.each do |donation|
+        random_datetime = Faker::Date.between(
+          from: donation.created_at, to: Time.zone.today - 2.days
+        ).to_datetime
+
+        rand(2..5).times do
+          FactoryBot.create(:tijuana_transaction,
+                            donation: donation,
+                            successful: true,
+                            amount_in_cents: Faker::Number.between(
+                              from: 500,
+                              to: 5000
+                            ),
+                            created_at: random_datetime,
+                            updated_at: random_datetime)
+        end
+      end
+
+      IdentityTijuana.fetch_user_updates(@sync_id) {
+        # pass
+      }
+
+      Sidekiq.redis { |r| r.set 'tijuana:users:dependent_data_cutoff', 2.days.ago }
+      IdentityTijuana.fetch_donation_updates(@sync_id) {
+        # pass
+      }
+
+      total_donations_amount = Donations::Donation.sum(:amount)
+
+      amounts_in_cents = IdentityTijuana::Transaction.where(successful: true)
+                                                     .sum(:amount_in_cents)
+                                                     .to_f
+
+      expect(total_donations_amount).to eq(amounts_in_cents / 100)
+
+      expect(Donations::Donation.count).to eq(
+        IdentityTijuana::Transaction.where(successful: true).count
+      )
+    end
+  end
 end
