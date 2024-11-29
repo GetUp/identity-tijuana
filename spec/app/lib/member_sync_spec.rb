@@ -181,17 +181,8 @@ describe IdentityTijuana::MemberSync do
         u1 = FactoryBot.create(
           :tijuana_user,
           email: 'bob@example.com',
-          created_at: 1.minute.ago
-        )
-        MemberExternalId.create!(
-          system: 'tijuana',
-          member: m,
-          external_id: u2.id.to_s
-        )
-
-        u2 = FactoryBot.create(
-          :tijuana_user,
-          email: 'charlie@example.com'
+          created_at: 1.minute.ago,
+          is_member: false
         )
         MemberExternalId.create!(
           system: 'tijuana',
@@ -199,9 +190,21 @@ describe IdentityTijuana::MemberSync do
           external_id: u1.id.to_s
         )
 
+        u2 = FactoryBot.create(
+          :tijuana_user,
+          email: 'charlie@example.com',
+          created_at: 10.minute.ago,
+          is_member: false
+        )
+        MemberExternalId.create!(
+          system: 'tijuana',
+          member: m,
+          external_id: u2.id.to_s
+        )
+
         expect(
           IdentityTijuana::MemberSync.find_primary_user_for_member(m)
-        ).to eq(u1)
+        ).to eq(u2)
       end
     end
   end
