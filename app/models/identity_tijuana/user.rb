@@ -9,6 +9,7 @@ module IdentityTijuana
       inverse_of: 'taggable',
       dependent: nil
     )
+    has_many :user_activity_events, dependent: nil
     has_many :tags, through: :taggings
     belongs_to :postcode, optional: true
 

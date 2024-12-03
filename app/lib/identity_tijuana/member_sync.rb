@@ -434,6 +434,8 @@ module IdentityTijuana
           else
             Rails.logger.info("[IdentityTijuana::sync] ID member #{member.id} updated from TJ user #{user&.id}: #{fields_updated.join(' ')} (sync_id=#{sync_id}, sync_type=#{sync_type}, sync_direction=#{sync_direction})")
           end
+
+          align_subscriptions_dates(member, user)
         end
       end
 
@@ -515,6 +517,95 @@ module IdentityTijuana
       rescue => e
         Rails.logger.warn "[IdentityTijuana::standardise_phone_number] #{e.class.name} occurred while standardising phone number #{phone_number}"
         nil
+      end
+    end
+
+    def self.align_subscriptions_dates(member, user)
+      # Joined at - first subscription
+      id_joined_at = member&.member_subscription_events
+                           &.where(operation: 'subscribe')&.order(created_at: :asc)
+                           &.first&.created_at
+
+      tj_joined_at = user&.user_activity_events&.where(activity: 'subscribed')
+                         &.order(created_at: :asc)&.first&.created_at
+
+      if tj_joined_at && id_joined_at &&
+         id_joined_at > tj_joined_at
+        # update created_at for all member's subscriptions
+        member&.member_subscriptions&.each do |ms|
+          # rubocop:disable Rails/SkipsModelValidations
+          ms.update_columns(created_at: tj_joined_at)
+          # rubocop:enable Rails/SkipsModelValidations
+        end
+      end
+
+      sync_created_at_for_subscribe_events(member, user)
+      sync_created_at_for_unsubscribe_events(member, user)
+    end
+
+    def self.sync_created_at_for_subscribe_events(member, user)
+      id_subscribe_events = member&.member_subscription_events
+                                  &.where(operation: 'subscribe')
+                                  &.order(created_at: :asc) || []
+
+      tj_subscribe_events = user&.user_activity_events
+                                &.where(activity: 'subscribed')
+                                &.order(created_at: :asc) || []
+
+      paired_events = id_subscribe_events.zip(tj_subscribe_events)
+
+      paired_events.each do |id_event, tj_event|
+        if id_event && tj_event
+          if id_event.created_at > tj_event.created_at &&
+             (id_event.created_at - tj_event.created_at).abs <= 6.hours
+            # We'll update the Id `member_subscription_event.created_at`
+            # to TJ's as it is older and is within the 6-hour threshold;
+            # 6 hours being a 'reasonable' difference to assume
+            # that these are corresponding events.
+            # rubocop:disable Rails/SkipsModelValidations
+            id_event.update_columns(created_at: tj_event.created_at)
+            # rubocop:enable Rails/SkipsModelValidations
+          else
+            # Nada ...
+          end
+        elsif id_event
+          # Only ID event exists – log ?
+        elsif tj_event
+          # Only TJ event exists - log ?
+        end
+      end
+    end
+
+    def self.sync_created_at_for_unsubscribe_events(member, user)
+      id_subscribe_events = member&.member_subscription_events
+                                  &.where(operation: 'unsubscribe')
+                                  &.order(created_at: :asc) || []
+
+      tj_subscribe_events = user&.user_activity_events
+                                &.where(activity: 'unsubscribed')
+                                &.order(created_at: :asc) || []
+
+      paired_events = id_subscribe_events.zip(tj_subscribe_events)
+
+      paired_events.each do |id_event, tj_event|
+        if id_event && tj_event
+          if id_event.created_at > tj_event.created_at &&
+             (id_event.created_at - tj_event.created_at).abs <= 6.hours
+            # We'll update the Id `member_subscription_event.created_at`
+            # to TJ's as it is older and is within the 6-hour threshold;
+            # 6 hours being a 'reasonable' difference to assume
+            # that these are corresponding events.
+            # rubocop:disable Rails/SkipsModelValidations
+            id_event.update_columns(created_at: tj_event.created_at)
+            # rubocop:enable Rails/SkipsModelValidations
+          else
+            # Nada ...
+          end
+        elsif id_event
+          # Only ID event exists – log ?
+        elsif tj_event
+          # Only TJ event exists - log ?
+        end
       end
     end
   end
