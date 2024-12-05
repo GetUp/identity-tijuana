@@ -126,7 +126,16 @@ module IdentityTijuana
             phone_number_type =
               audit.audited_changes['phone_type'] ||
               PhoneNumber.find_by(id: audit.auditable_id).try(:phone_type)
-            next unless phone_number_type.to_sym == ancillary_match_value
+
+              if phone_number_type.kind_of?(Array)
+                phone_number_type = phone_number_type[0]
+              end
+
+              if ["mobile", "landline"].include?(phone_number_type)
+                phone_number_type = phone_number_type.to_sym
+              end
+
+            next unless phone_number_type == ancillary_match_value
           when 'MemberSubscription'
             audit_subscription_id =
               audit.audited_changes['subscription_id'] ||
