@@ -225,9 +225,17 @@ RSpec.describe IdentityTijuana::MemberSync do
           member.address.updated_at || member.updated_at
         )
 
-        expect(id_change_date).to eq(last_audit_log_with_change.created_at)
-          .or(eq(member.address.updated_at))
-          .or(eq(member.updated_at))
+        # These test modifications are part of the temporary workaround
+        # in `get_id_change_date` for obtaining change timestamp from the
+        # `member.address.updated_at` and not from the audit log.
+        expect(id_change_date).to eq(member.address.updated_at)
+        expect(id_change_date).not_to eq(last_audit_log_with_change.created_at)
+
+        # These are the original assertions and should be reinstated once the
+        # temporary workaround is resolved.
+        # expect(id_change_date).to eq(last_audit_log_with_change.created_at)
+        #   .or(eq(member.address.updated_at))
+        #   .or(eq(member.updated_at))
         expect(last_audit_log_with_change.audited_changes.key?('line1'))
           .to be(true)
         expect(audit_logs.count).to eq(4)
