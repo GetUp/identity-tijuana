@@ -121,6 +121,7 @@ RSpec.describe IdentityTijuana::MemberSync do
         end
 
         member.update_phone_number('61427700333')
+        member.phone_numbers.reload
 
         # NB: we'll only have `2` audits as `update_phone_number`
         # will simply return if the new phone number is same
@@ -166,6 +167,7 @@ RSpec.describe IdentityTijuana::MemberSync do
         end
 
         member.update_phone_number('61291115555')
+        member.phone_numbers.reload
 
         # NB: we'll only have `2` audits as `update_phone_number`
         # will simply return if the new phone number is same
@@ -211,6 +213,7 @@ RSpec.describe IdentityTijuana::MemberSync do
         end
 
         member.update_address({ town: 'Coburg', postcode: '3021' })
+        member.addresses.reload
 
         audit_logs = member.associated_audits.where(
           auditable_type: 'Address',
