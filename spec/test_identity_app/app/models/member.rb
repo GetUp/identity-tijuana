@@ -301,7 +301,8 @@ class Member < ApplicationRecord
     }
 
     if (new_address = addresses.find_by(address_attributes))
-      new_address.touch!
+      # Touch it only if it is not a current address
+      new_address.touch! unless new_address.id == old_address_id
     else
       new_address = addresses.create!(address_attributes)
     end
