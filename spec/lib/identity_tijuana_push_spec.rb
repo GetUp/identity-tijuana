@@ -33,9 +33,9 @@ describe IdentityTijuana do
 
   context '#push_in_batches' do
     before(:each) do
-      expect_any_instance_of(IdentityTijuana::API).to receive(:tag_emails).with(anything, anything) { {} }
+      expect_any_instance_of(IdentityTijuana::API).to receive(:tag_emails).with(anything, anything, anything) { {} }
 
-      @external_system_params = JSON.generate({ 'tag' => 'test_tag' })
+      @external_system_params = JSON.generate({ 'tag' => 'test_tag', listcut: "true" })
 
       allow(Settings).to receive_message_chain("tijuana.push_batch_amount") { 10 }
       allow(Settings).to receive_message_chain("tijuana.api.url") { "http://tijuana" }

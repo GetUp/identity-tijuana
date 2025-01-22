@@ -8,8 +8,9 @@ module IdentityTijuana
       @headers = { 'Auth-Token' => @secret }
     end
 
-    def tag_emails(tag, emails)
-      res = @client.post(@url, { tag: tag, :"emails[]" => emails }, @headers)
+    def tag_emails(tag, emails, listcut)
+      params = { tag: tag, :"emails[]" => emails, listcut: listcut }
+      res = @client.post(@url, params, @headers)
       if (res.status < 200) || (res.status >= 300)
         message = "Tijuana HTTP POST failed: #{res.status}:#{res.reason}"
         Rails.logger.debug message

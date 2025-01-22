@@ -21,7 +21,7 @@ module IdentityTijuana
         serializer: TijuanaMemberSyncPushSerializer
       ).as_json.to_a.pluck(:email)
       tijuana = API.new
-      tijuana.tag_emails(tag, rows)
+      tijuana.tag_emails(tag, rows, "true")
 
       # TODO return write results here
       yield batch_index, 0
