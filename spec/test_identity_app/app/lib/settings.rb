@@ -74,6 +74,12 @@ class Settings
     }
   end
 
+  def self.email
+    return {
+      "unsubscribe_url" => "http://localhost/unsubscribe",
+    }
+  end
+
   def self.geography
     return {}
   end

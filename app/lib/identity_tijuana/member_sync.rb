@@ -425,15 +425,13 @@ module IdentityTijuana
           ignore_name_change: false
         )
 
-        if new_member.present?
-          if member.blank?
-            new_member.created_at = user&.created_at # Preserve TJ creation date
-            new_member.save!
-            member = new_member
-            Rails.logger.info("[IdentityTijuana::sync] ID member #{member.id} created from TJ user #{user&.id} (sync_id=#{sync_id}, sync_type=#{sync_type}, sync_direction=#{sync_direction})")
-          else
-            Rails.logger.info("[IdentityTijuana::sync] ID member #{member.id} updated from TJ user #{user&.id}: #{fields_updated.join(' ')} (sync_id=#{sync_id}, sync_type=#{sync_type}, sync_direction=#{sync_direction})")
-          end
+        if member.blank?
+          new_member.created_at = user&.created_at # Preserve TJ creation date
+          new_member.save!
+          member = new_member
+          Rails.logger.info("[IdentityTijuana::sync] ID member #{member.id} created from TJ user #{user&.id} (sync_id=#{sync_id}, sync_type=#{sync_type}, sync_direction=#{sync_direction})")
+        else
+          Rails.logger.info("[IdentityTijuana::sync] ID member #{member.id} updated from TJ user #{user&.id}: #{fields_updated.join(' ')} (sync_id=#{sync_id}, sync_type=#{sync_type}, sync_direction=#{sync_direction})")
         end
       end
 
