@@ -91,6 +91,14 @@ module IdentityTijuana
       # Check whether we have an ancillary matching field.
       ancillary_match_value = nil
       case auditable_type
+      when 'Address'
+        # Temporary workaround to retrieve the actual `updated_at` timestamp
+        # of the model, instead of getting it via audit logs.
+        # The reason for this is that we are `touching` member addresses
+        # to `mark` them as primary, and this cannot be picked from the audit
+        # logs as currently it is not a tracked attribute. Thus the change
+        # will be overriden during the `import` sync from TJ.
+        return default_change_date if default_change_date
       when 'PhoneNumber'
         # For phone numbers, need to make sure that changes relate to the
         # correct type of phone number.
