@@ -29,10 +29,10 @@ module IdentityTijuana
 
     def self.import(donation_id, sync_id)
       donation = Donation.find(donation_id)
-      donation.import(sync_id)
+      donation.import(sync_id, donation.transactions)
     end
 
-    def import(_sync_id)
+    def import(_sync_id, transactions)
       member = Member.find_by_external_id(:tijuana, user_id)
       if member.present?
         if member.ghosting_started?
@@ -68,11 +68,24 @@ module IdentityTijuana
               raise
             end
           end
-          refund_transactions = transactions.filter_map { |t|
-            t.refund_of_id && t.successful ? [t.refund_of_id, t] : nil
-          }.to_h
+
+          current_transaction_ids = Set.new
+          refund_transactions = {}
+
+          transactions.each do |t|
+            current_transaction_ids << t.id
+            refund_transactions[t.refund_of_id] = t if t.refund_of_id && t.successful
+          end
+
+          # If the refunded transaction is not present in the current batch,
+          # update the original donation's refunded_at timestamp.
+          refund_transactions.each do |refund_of_id, t|
+            if current_transaction_ids.exclude?(refund_of_id)
+              Donations::Donation.where(external_id: refund_of_id).update!(refunded_at: t.created_at)
+            end
+          end
+
           transactions.each do |transaction|
-            next if transaction.refund_of_id
             next unless transaction.successful
 
             refund_transaction = refund_transactions[transaction.id]

@@ -175,38 +175,56 @@ module IdentityTijuana
 
   def self.fetch_donation_updates_impl(sync_id)
     started_at = DateTime.now
-    last_updated_at = get_redis_date('tijuana:donations:last_updated_at')
-    last_id = (Sidekiq.redis { |r| r.get 'tijuana:donations:last_id' } || 0).to_i
+    last_updated_at = get_redis_date('tijuana:transactions:last_updated_at')
+    last_id = (Sidekiq.redis { |r| r.get 'tijuana:transactions:last_id' } || 0).to_i
     users_dependent_data_cutoff = get_redis_date('tijuana:users:dependent_data_cutoff')
-    updated_donations = IdentityTijuana::Donation.updated_donations(last_updated_at, last_id, users_dependent_data_cutoff)
-    updated_donations_all = IdentityTijuana::Donation.updated_donations_all(last_updated_at, last_id, users_dependent_data_cutoff)
-    updated_donations.each do |donation|
-      IdentityTijuana::Donation.import(donation.id, sync_id)
+
+    updated_transactions = IdentityTijuana::Transaction
+                           .updated_transactions_all(
+                             last_updated_at,
+                             last_id,
+                             users_dependent_data_cutoff
+                           )
+                           .includes(:donation)
+                           .order(:updated_at, :id)
+                           .limit(Settings.tijuana.pull_batch_amount || 100)
+
+    updated_transactions_all = IdentityTijuana::Transaction
+                               .updated_transactions_all(
+                                 last_updated_at,
+                                 last_id,
+                                 users_dependent_data_cutoff
+                               ).count()
+
+    donations_with_transactions = updated_transactions.group_by(&:donation)
+
+    donations_with_transactions.each do |donation, transactions|
+      donation.import(sync_id, transactions)
     end
 
-    unless updated_donations.empty?
-      set_redis_date('tijuana:donations:last_updated_at', updated_donations.last.updated_at)
-      Sidekiq.redis { |r| r.set 'tijuana:donations:last_id', updated_donations.last.id }
+    unless updated_transactions.empty?
+      set_redis_date('tijuana:transactions:last_updated_at', updated_transactions.last.updated_at)
+      Sidekiq.redis { |r| r.set 'tijuana:transactions:last_id', updated_transactions.last.id }
     end
 
     execution_time_seconds = ((DateTime.now - started_at) * 24 * 60 * 60).to_i
     yield(
-      updated_donations.size,
-        updated_donations.pluck(:id),
+      updated_transactions.size,
+      updated_transactions.pluck(:id),
         {
-          scope: 'tijuana:donations:last_updated_at',
+          scope: 'tijuana:transactions:last_id',
           scope_limit: Settings.tijuana.pull_batch_amount,
-          from: last_updated_at,
-          to: updated_donations.empty? ? nil : updated_donations.last.updated_at,
+          from: last_id,
+          to: updated_transactions.empty? ? nil : updated_transactions.last.id,
           started_at: started_at,
           completed_at: DateTime.now,
           execution_time_seconds: execution_time_seconds,
-          remaining_behind: updated_donations_all.count
+          remaining_behind: updated_transactions_all
         },
         false
     )
 
-    updated_donations.count < updated_donations_all.count
+    updated_transactions.count < updated_transactions_all
   end
 
   def self.fetch_tagging_updates(sync_id)
