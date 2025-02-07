@@ -185,7 +185,7 @@ module IdentityTijuana
                              last_id,
                              users_dependent_data_cutoff
                            )
-                           .includes(:donation)
+                           .includes(donation: :donation_upgrades)
                            .order(:updated_at, :id)
                            .limit(Settings.tijuana.pull_batch_amount || 100)
 
