@@ -185,7 +185,7 @@ module IdentityTijuana
                              last_id,
                              users_dependent_data_cutoff
                            )
-                           .includes(:donation)
+                           .includes(donation: :donation_upgrades)
                            .order(:updated_at, :id)
                            .limit(Settings.tijuana.pull_batch_amount || 100)
 
@@ -254,7 +254,7 @@ module IdentityTijuana
 
     tags_remaining_behind_sql = %{
       SELECT tu.taggable_id, t.name, tu.id, t.author_id, tu.created_at
-      FROM taggings tu #{'FORCE INDEX (PRIMARY)' unless Settings.tijuana.database_url.start_with? 'postgres'}
+      FROM taggings tu
       JOIN tags t
         ON t.id = tu.tag_id
       WHERE tu.id > #{last_id}
@@ -265,7 +265,7 @@ module IdentityTijuana
 
     scoped_latest_taggings_sql = %{
       SELECT tu.taggable_id, t.name, tu.id, t.author_id, tu.created_at
-      FROM taggings tu #{'FORCE INDEX (PRIMARY)' unless Settings.tijuana.database_url.start_with? 'postgres'}
+      FROM taggings tu
       JOIN tags t
         ON t.id = tu.tag_id
       WHERE tu.id > #{last_id}
