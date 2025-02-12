@@ -134,6 +134,14 @@ module IdentityTijuana
             phone_number_type =
               audit.audited_changes['phone_type'] ||
               PhoneNumber.find_by(id: audit.auditable_id).try(:phone_type)
+
+            # The audited_changes for `phone_type` may contain an array, eg.
+            # ["mobile", "landline"] if the phone type was updated –
+            # and which did happen in the past.
+            # The array represents [old_value, new_value].
+            if audit.action == 'update' && phone_number_type.kind_of?(Array)
+              phone_number_type = phone_number_type[1]
+            end
             next unless phone_number_type.to_sym == ancillary_match_value
           when 'MemberSubscription'
             audit_subscription_id =

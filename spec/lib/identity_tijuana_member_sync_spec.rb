@@ -51,8 +51,8 @@ RSpec.describe IdentityTijuana::MemberSync do
 
         member.update!(last_name: 'NewLastName')
 
-        # Get all audit logs and validate timestamps
         audit_logs = member.audits.where(auditable_type: 'Member')
+        expect(audit_logs.count).to eq(5)
 
         id_change_date = described_class.get_id_change_date(
           member, :name,
@@ -63,7 +63,6 @@ RSpec.describe IdentityTijuana::MemberSync do
           .or(eq(member.updated_at))
         expect(last_audit_log_with_change.audited_changes.key?('last_name'))
           .to be(true)
-        expect(audit_logs.count).to eq(5)
       end
 
       it 'correctly identifies the change date for email' do
@@ -89,6 +88,7 @@ RSpec.describe IdentityTijuana::MemberSync do
         member.update!(email: 'go-rust@grom.com')
 
         audit_logs = member.audits.where(auditable_type: 'Member')
+        expect(audit_logs.count).to eq(5)
 
         id_change_date = described_class.get_id_change_date(member, :email,
                                                             member.updated_at)
@@ -97,7 +97,6 @@ RSpec.describe IdentityTijuana::MemberSync do
           .or(eq(last_audit_log_with_change.created_at))
         expect(last_audit_log_with_change.audited_changes.key?('email'))
           .to be(true)
-        expect(audit_logs.count).to eq(5)
       end
 
       it 'correctly identifies the change date for mobile' do
@@ -130,6 +129,8 @@ RSpec.describe IdentityTijuana::MemberSync do
           auditable_type: 'PhoneNumber',
         ).reorder(created_at: :desc)
 
+        expect(audit_logs.count).to eq(2)
+
         mobile_phone = member.phone_numbers.mobile.first
 
         id_change_date = described_class.get_id_change_date(
@@ -143,7 +144,6 @@ RSpec.describe IdentityTijuana::MemberSync do
           .or(eq(member.updated_at))
         expect(last_audit_log_with_change.audited_changes.key?('phone'))
           .to be(true)
-        expect(audit_logs.count).to eq(2)
       end
 
       it 'correctly identifies the change date for landline' do
@@ -176,6 +176,8 @@ RSpec.describe IdentityTijuana::MemberSync do
           auditable_type: 'PhoneNumber',
         ).reorder(created_at: :desc)
 
+        expect(audit_logs.count).to eq(2)
+
         landline = member.phone_numbers.landline.first
 
         id_change_date = described_class.get_id_change_date(
@@ -189,7 +191,52 @@ RSpec.describe IdentityTijuana::MemberSync do
           .or(eq(member.updated_at))
         expect(last_audit_log_with_change.audited_changes.key?('phone'))
           .to be(true)
+      end
+
+      it 'correctly identifies the changes for phone type when\
+       audited changes contain and array of values' do
+        # The audited_changes for `phone_type` may contain an array, eg.
+        # ["mobile", "landline"] if the phone type was updated –
+        # which did happen in the past.
+        # The array represents [old_value, new_value].
+        member = nil
+        travel_to(2.minutes.ago) do
+          member = FactoryBot.create(:member)
+          member.update_phone_number('61427700333')
+        end
+
+        # Temporarily turn-off phone_type validation to mimic the historic change
+        # of the phone type.
+        PhoneNumber.skip_callback(:save, :before, :find_phone_type)
+        member.phone_numbers.sort_by(&:updated_at).last
+              .update!({ phone_type: 'landline' })
+        PhoneNumber.set_callback(:save, :before, :find_phone_type)
+
+        audit_logs = member.associated_audits.where(
+          auditable_type: 'PhoneNumber',
+        ).reorder(created_at: :desc)
+
         expect(audit_logs.count).to eq(2)
+
+        last_audit_log = audit_logs.first
+        audited_changes = last_audit_log.audited_changes
+
+        expect(audited_changes).to have_key('phone_type')
+        expect(audited_changes['phone_type']).to be_an(Array)
+        expect(audited_changes['phone_type'].size).to eq(2)
+        expect(audited_changes['phone_type'][1]).to eq('landline')
+
+        member.phone_numbers.reload
+
+        id_change_date = described_class.get_id_change_date(
+          member,
+          :landline,
+          member.phone_numbers.first.updated_at || member.updated_at
+        )
+
+        expect(id_change_date).to eq(last_audit_log.created_at)
+          .or(eq(member.phone_numbers.first.updated_at))
+          .or(eq(member.updated_at))
       end
 
       it 'correctly identifies the change date for address' do
@@ -219,6 +266,8 @@ RSpec.describe IdentityTijuana::MemberSync do
           auditable_type: 'Address',
         ).reorder(created_at: :desc)
 
+        expect(audit_logs.count).to eq(3)
+
         id_change_date = described_class.get_id_change_date(
           member,
           :address,
@@ -238,7 +287,6 @@ RSpec.describe IdentityTijuana::MemberSync do
         #   .or(eq(member.updated_at))
         expect(last_audit_log_with_change.audited_changes.key?('line1'))
           .to be(true)
-        expect(audit_logs.count).to eq(3)
       end
 
       it 'correctly identifies the change date for email subscription' do
@@ -267,6 +315,8 @@ RSpec.describe IdentityTijuana::MemberSync do
           auditable_type: 'MemberSubscription',
         ).reorder(created_at: :desc)
 
+        expect(audit_logs.count).to eq(4)
+
         email_sub = member.member_subscriptions.find_by(
           subscription_id: Settings.tijuana.email_subscription_id
         )
@@ -282,7 +332,6 @@ RSpec.describe IdentityTijuana::MemberSync do
           .or(eq(member.updated_at))
         expect(last_audit_log_with_change.audited_changes.key?('subscribed_at'))
           .to be(true)
-        expect(audit_logs.count).to eq(4)
       end
 
       it 'correctly identifies the change date for sms subscription' do
@@ -311,6 +360,8 @@ RSpec.describe IdentityTijuana::MemberSync do
           auditable_type: 'MemberSubscription',
         ).reorder(created_at: :desc)
 
+        expect(audit_logs.count).to eq(4)
+
         sms_sub = member.member_subscriptions.find_by(
           subscription_id: Settings.tijuana.sms_subscription_id
         )
@@ -326,7 +377,6 @@ RSpec.describe IdentityTijuana::MemberSync do
           .or(eq(member.updated_at))
         expect(last_audit_log_with_change.audited_changes.key?('subscribed_at'))
           .to be(true)
-        expect(audit_logs.count).to eq(4)
       end
 
       it 'correctly identifies the change date for calling subscription' do
@@ -355,6 +405,8 @@ RSpec.describe IdentityTijuana::MemberSync do
           auditable_type: 'MemberSubscription',
         ).reorder(created_at: :desc)
 
+        expect(audit_logs.count).to eq(4)
+
         call_sub = member.member_subscriptions.find_by(
           subscription_id: Settings.tijuana.calling_subscription_id
         )
@@ -370,7 +422,6 @@ RSpec.describe IdentityTijuana::MemberSync do
           .or(eq(member.updated_at))
         expect(last_audit_log_with_change.audited_changes.key?('subscribed_at'))
           .to be(true)
-        expect(audit_logs.count).to eq(4)
       end
     end
   end
