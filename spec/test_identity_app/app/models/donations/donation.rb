@@ -65,7 +65,11 @@ class Donations::Donation < ApplicationRecord
     )
   end
 
-  def self.upsert!(attrs)
+  # The `fail_on_invalid` flag allows clients to decide how to handle invalid donations.
+  # When set to `true`, the method will raise an error if the donation is invalid.
+  # When `false` (default), the method will attempt an alternative lookup based on
+  # member_id, amount, and created_at to find and merge an existing donation.
+  def self.upsert!(attrs, fail_on_invalid: false)
     # rubocop:disable Rails/SaveBang
     if attrs[:external_id].present?
       donation = Donations::Donation.find_or_create_by(attrs.slice(:medium, :external_id)) do |don|
@@ -75,7 +79,7 @@ class Donations::Donation < ApplicationRecord
 
     # Sometimes a save fails because the donation already exists but was missing an external_id (was not found)
     # Use a find based on other attrs instead to try and find and merge the donation
-    if donation.blank? || donation.invalid?
+    if !fail_on_invalid && (donation.blank? || donation.invalid?)
       donation = Donations::Donation.find_or_create_by(attrs.slice(:medium, :member_id, :amount, :created_at)) do |don|
         don.assign_attributes(attrs.except(:medium, :member_id, :amount, :created_at))
       end

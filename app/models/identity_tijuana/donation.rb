@@ -107,7 +107,9 @@ module IdentityTijuana
               while true
                 begin
                   attempts += 1
-                  Donations::Donation.upsert!(donation_hash)
+                  # NB we want to handle the `invalid` donations in a below
+                  # rescue block
+                  Donations::Donation.upsert!(donation_hash, fail_on_invalid: true)
                   break
                 rescue ActiveRecord::RecordInvalid => e
                   # Workaround for a problematic index in ID, which requires
@@ -131,11 +133,11 @@ module IdentityTijuana
                     AND t.id < #{transaction.id}
                   }).to_a
                   offset_microseconds = preceding_duplicates.count + 1
-                  donation_hash[:created_at] = transaction.created_at + (offset_microseconds / 1000000.0)
+                  donation_hash[:created_at] = transaction.created_at + (offset_microseconds / 10000.0)
                 end
               end
             rescue StandardError => e
-              Rails.logger.error "Tijuana transaction sync id:#{transaction.id}, error: #{e.message}"
+              Rails.logger.error "Tijuana sync id:#{_sync_id}, transaction id: #{transaction.id} error: #{e.message}"
               raise
             end
           end

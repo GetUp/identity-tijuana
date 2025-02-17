@@ -779,25 +779,30 @@ describe IdentityTijuana do
       )
     end
 
-    it 'syncs successful transactions with the same updated_at as donations' do
-      selected_donations = @donations.sample(3)
+    it 'syncs transactions with the same amount, member_id and created_at' do
+      user = FactoryBot.create(:tijuana_user)
+      donation = FactoryBot.create(
+        :tijuana_donation,
+        amount_in_cents: Faker::Number.between(from: 1000, to: 10_000),
+        user: user,
+        content_module_id: 1,
+        payment_method: 'credit-card',
+        frequency: 'one_off',
+        page_id: 1,
+        cover_processing_fee: true,
+        created_at: Time.zone.today - 2.days,
+        updated_at: Time.zone.today
+      )
 
-      selected_donations.each do |donation|
-        random_datetime = Faker::Date.between(
-          from: donation.created_at, to: Time.zone.today - 2.days
-        ).to_datetime
-
-        rand(2..5).times do
-          FactoryBot.create(:tijuana_transaction,
-                            donation: donation,
-                            successful: true,
-                            amount_in_cents: Faker::Number.between(
-                              from: 500,
-                              to: 5000
-                            ),
-                            created_at: random_datetime,
-                            updated_at: random_datetime)
-        end
+      tj_transactions = []
+      5.times do
+        trx = FactoryBot.create(:tijuana_transaction,
+                                donation: donation,
+                                successful: true,
+                                amount_in_cents: 5000,
+                                created_at: Time.zone.today,
+                                updated_at: Time.zone.today)
+        tj_transactions << trx
       end
 
       IdentityTijuana.fetch_user_updates(@sync_id) {
@@ -809,17 +814,25 @@ describe IdentityTijuana do
         # pass
       }
 
-      total_donations_amount = Donations::Donation.sum(:amount)
-
-      amounts_in_cents = IdentityTijuana::Transaction.where(successful: true)
-                                                     .sum(:amount_in_cents)
-                                                     .to_f
-
-      expect(total_donations_amount).to eq(amounts_in_cents / 100)
-
-      expect(Donations::Donation.count).to eq(
-        IdentityTijuana::Transaction.where(successful: true).count
+      id_donations = Donations::Donation.where(
+        external_id: tj_transactions.pluck(:id).map(&:to_s)
       )
+
+      total_donations_count = id_donations.count
+
+      expect(total_donations_count).to eq(5)
+
+      id_donations_amount = id_donations.sum(:amount)
+
+      tj_amounts_in_cents = IdentityTijuana::Transaction
+                            .where(
+                              successful: true,
+                              donation_id: donation.id
+                            )
+                            .sum(:amount_in_cents)
+                            .to_f
+
+      expect(id_donations_amount).to eq(tj_amounts_in_cents / 100)
     end
   end
 end
