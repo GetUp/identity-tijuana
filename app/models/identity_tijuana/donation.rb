@@ -32,7 +32,7 @@ module IdentityTijuana
       donation.import(sync_id, donation.transactions)
     end
 
-    def import(_sync_id, transactions)
+    def import(sync_id, transactions)
       member = Member.find_by_external_id(:tijuana, user_id)
       if member.present?
         if member.ghosting_started?
@@ -107,7 +107,9 @@ module IdentityTijuana
               while true
                 begin
                   attempts += 1
-                  Donations::Donation.upsert!(donation_hash)
+                  # NB we want to handle the `invalid` donations in a below
+                  # rescue block
+                  Donations::Donation.upsert!(donation_hash, fail_on_invalid: true)
                   break
                 rescue ActiveRecord::RecordInvalid => e
                   # Workaround for a problematic index in ID, which requires
@@ -131,15 +133,21 @@ module IdentityTijuana
                     AND t.id < #{transaction.id}
                   }).to_a
                   offset_microseconds = preceding_duplicates.count + 1
-                  donation_hash[:created_at] = transaction.created_at + (offset_microseconds / 1000000.0)
+                  donation_hash[:created_at] = transaction.created_at + (offset_microseconds / 10000.0)
                 end
               end
             rescue StandardError => e
-              Rails.logger.error "Tijuana transaction sync id:#{transaction.id}, error: #{e.message}"
+              Rails.logger.error "Tijuana sync id:#{sync_id}, transaction id: #{transaction.id} error: #{e.message}"
               raise
             end
           end
         end
+      else
+        Rails.logger.error(
+          "Failed donation sync. " \
+          "Member with external id: #{user_id} and system: 'tijuana' does not exist. " \
+          "Failed to sync transaction ids: #{transactions.pluck(:id).join(', ')}"
+        )
       end
     end
   end
