@@ -32,7 +32,7 @@ module IdentityTijuana
       donation.import(sync_id, donation.transactions)
     end
 
-    def import(_sync_id, transactions)
+    def import(sync_id, transactions)
       member = Member.find_by_external_id(:tijuana, user_id)
       if member.present?
         if member.ghosting_started?
@@ -137,11 +137,17 @@ module IdentityTijuana
                 end
               end
             rescue StandardError => e
-              Rails.logger.error "Tijuana sync id:#{_sync_id}, transaction id: #{transaction.id} error: #{e.message}"
+              Rails.logger.error "Tijuana sync id:#{sync_id}, transaction id: #{transaction.id} error: #{e.message}"
               raise
             end
           end
         end
+      else
+        Rails.logger.error(
+          "Failed donation sync. " \
+          "Member with external id: #{user_id} and system: 'tijuana' does not exist. " \
+          "Failed to sync transaction ids: #{transactions.pluck(:id).join(', ')}"
+        )
       end
     end
   end
