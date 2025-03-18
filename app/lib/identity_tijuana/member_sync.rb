@@ -6,18 +6,50 @@ module IdentityTijuana
       begin
         return if member.ghosting_started?
 
-        ext_id = MemberExternalId.find_by(system: 'tijuana', member: member)
-        user_id = ext_id.external_id if ext_id.present?
-        if user_id.present?
-          user = User.find_by(id: user_id)
-          ext_id.destroy! if user.blank?
+        # Destroy any dangling external ID references, remove any
+        # external ids from the list if not found
+        ext_ids = MemberExternalId.where(
+          system: 'tijuana',
+          member: member
+        ).select do |ext_id|
+          user = User.find_by(id: ext_id.external_id.to_i)
+          if user.nil?
+            Rails.logger.info(
+              "[IdentityTijuana::export_member]: " \
+              "Removing dangling external id for Id member #{member.id}, " \
+              "TJ user #{ext_id.external_id} " \
+              "(sync_id=#{sync_id}, sync_type=#{sync_type}, " \
+              "sync_direction=export_member)"
+            )
+            ext_id.destroy!
+          end
+          user.present? # return value for `select` call
         end
-        if user.blank?
-          sync_type = :merge
-          email = member.email
-          user = User.find_by(email: email) if email.present?
-          sync_type = :create if user.blank?
+        if ext_ids.count == 0
+          # XXX this will fail for de-normalised and/or cleaned emails
+          user = User.find_by(email: member.email) if member.email.present?
+
+          if user.nil?
+            sync_type = :create
+          else
+            sync_type = :merge
+            Rails.logger.info(
+              "[IdentityTijuana::export_member]: " \
+              "Adding external id for Id member #{member.id} " \
+              "to TJ user #{user.id} " \
+              "(sync_id=#{sync_id}, sync_type=#{sync_type}, " \
+              "sync_direction=export_member)"
+            )
+            MemberExternalId.create!(
+              system: 'tijuana',
+              member: member,
+              external_id: user.id.to_s
+            )
+          end
         else
+          # Only the primary match gets synced. Others should be
+          # linked, but not synced.
+          user = find_primary_user_for_member(member)
           sync_type = :update
         end
 
@@ -39,19 +71,58 @@ module IdentityTijuana
         member = Member.find_by_external_id(:tijuana, user_id)
 
         if member.blank?
-          sync_type = :merge
+          # Didn't find an existing, alredy-linked member, so look for
+          # one that exists but is not yet linked. If found, add the
+          # link so the sync implementation can determine the correct
+          # primary TJ user when the member found already has other
+          # linked users (i.e. this user might not be the primary).
+          #
+          # In particular, the Cleanser may return an email that is
+          # not the same as this user's email, e.g. typos like
+          # "alice@gmail.co" will be returned as "alice@gmail.com". So
+          # a typo'ed TJ user may be getting added to an existing Id
+          # member already linked to another TJ user without the typo
           cleansed_email = Cleanser.cleanse_email(user.email)
-          cleansed_email = nil unless Cleanser.accept_email?(cleansed_email)
           member = Member.find_by(email: cleansed_email) if cleansed_email.present?
+
+          if member.nil?
+            sync_type = :create
+          else
+            sync_type = :merge
+            Rails.logger.info "[IdentityTijuana::import_user] " \
+                              "Adding external id for TJ user #{user_id} " \
+                              "to Id member #{member.id}" \
+                              "(sync_id=#{sync_id}, sync_type=#{sync_type}, " \
+                              "sync_direction=import_user)"
+            MemberExternalId.create!(
+              system: 'tijuana',
+              member: member,
+              external_id: user.id.to_s
+            )
+          end
         else
           sync_type = :update
         end
 
-        if member.blank?
-          sync_type = :create
-        else
+        if member.present?
           if member.ghosting_started?
-            Rails.logger.warn "Tijuana member (#{user.id}) is ghosted (#{member.id}), not updating (sync_id=#{sync_id}, sync_type=#{sync_type}, sync_direction=import_user)"
+            Rails.logger.error "[IdentityTijuana::import_user] " \
+                               "Member #{member.id} for TJ user #{user_id} is " \
+                               "ghosted, not updating " \
+                               "(sync_id=#{sync_id}, sync_type=#{sync_type}, " \
+                               "sync_direction=import_user)"
+            return
+          end
+
+          primary_user = find_primary_user_for_member(member)
+          if primary_user.id != user_id
+            # Only the primary match gets synced. Others should be
+            # linked, but not synced.
+            Rails.logger.info "[IdentityTijuana::import_user] " \
+                              "TJ user #{user_id} not primary for " \
+                              "Id member #{member.id}, not syncing " \
+                              "(sync_id=#{sync_id}, sync_type=#{sync_type}, " \
+                              "sync_direction=import_user)"
             return
           end
         end
@@ -77,6 +148,87 @@ module IdentityTijuana
       sms_subscription: ['associated_audits', 'MemberSubscription', %w[unsubscribed_at]],
       calling_subscription: ['associated_audits', 'Member_subscription', %w[unsubscribed_at]],
     }.freeze
+
+    # Find the primary TJ user match for a given ID member.
+    #
+    # Looks at the user for each given id, orders them by created at
+    # date, then selects:
+    #
+    #  1. The user with a normalised (but not cleaned), matching email, if any
+    #  2. The first subscribed user, if any
+    #  3. The first remaining user
+    def self.find_primary_user_for_member(member)
+      external_ids = member.member_external_ids.where(system: 'tijuana')
+      if external_ids.nil? || external_ids.count == 0
+        raise "Id member has no linked TJ users"
+      end
+
+      # Some scenarios to think about before changing this:
+      #
+      # (1) A member email address may not match a TJ user email
+      # address. This could be because of:
+      #    * The cleaner fixed a typo
+      #    * Un-normalised data in both (example@gmail.com vs
+      #      Exam.ple@gmail.com
+      #    * The member's email was changed through Id CRM UI
+      #
+      # (1) A member's email address changed in Id, as a result no
+      # associated TJ users have the same email address.
+      #
+      # (2) A member subscribes and becomes active. They then typo
+      # their email when signing a petition from a new browser. The
+      # newer typo'ed user is not yet active (although it will become
+      # active tomorrow morning) but it is subscribed.
+      #
+      # (3) A member has two users associated with it, one with the
+      # correct email and one with a typo. The typo'ed user gets
+      # updated because they sign another petition with the same typo
+      # and a new postcode.
+      #
+      # (4) A member subscribes using a typo'ed email, becomes active
+      # since they are a new member but unsubscribed because their
+      # email bounced. Their Id member record has the correct email
+      # because the Cleanser fixed it. Thus the member and associated
+      # user have different email addresses. The member later signs
+      # another petition using the correct email address.
+
+      # The points above means that we should matching based on email
+      # first if present, otherwise fall back looking at subscribed
+      # users, then users that first created (assuming most members
+      # will likely not typo their email address).
+      #
+      # In particular we can't rely on most-recently-updated, since
+      # typo'ed users can still get updated because of (3) above. We
+      # also can't rely on active, since it's laggy but also typo'ed
+      # users can be active after they first sign up.
+
+      ext_ids = external_ids.map { |id| id.external_id.to_i }
+      users = User.where(id: ext_ids).order(created_at: :asc)
+      if users.count != external_ids.count
+        raise "Not enough matching users for external ids: #{ext_ids}"
+      end
+
+      matching_emails = users.select { |user|
+        # Need to normalise the email to match the normalisation Id
+        # would do, but as-is, i.e. without any typo correction. So
+        # `example@gmail.com` should match `EXAMPLE@GMAIL.COM` but not
+        # `example@gamil.com` (note the typo).
+        Cleanser.normalise_email(user.email) == member.email
+      }
+
+      primary = matching_emails.first
+
+      if primary.nil?
+        subscribed_users = users.select { |user| user.is_member }
+        primary = subscribed_users.first
+      end
+
+      if primary.nil?
+        primary = users.first
+      end
+
+      primary
+    end
 
     # Use the audit log to work out the date/time a given field or set of
     # fields was last changed in ID.
@@ -252,31 +404,23 @@ module IdentityTijuana
       )
 
       # Compare email address.
-      abort_sync = false
+      #
+      # Note that UpsertService will call Cleanser.cleanse_email on
+      # any email that gets passed through to it, so cleanse TJ user's
+      # email up front to see if it's worth doing.
       compare_fields(
-        sync_type, [member&.email], [user&.email],
+        sync_type,
+        [member&.email], # Id normalises its email addresses, so this is clean
+        [Cleanser.cleanse_email(user&.email)], # TJ does not, so scrub it
         Proc.new { get_id_change_date(member, :email, member&.updated_at) },
         Proc.new { user_updated_at },
-        Proc.new { member_hash[:emails] = [{ email: user.email }] },
         Proc.new {
-          existing_user_with_same_email = User.find_by(email: member.email)
-          if existing_user_with_same_email.present?
-            # We can't update the email in TJ if another user already exists
-            # with that email address. In that scenario, the current user
-            # needs to be unlinked from the member, and we need to ensure
-            # that the other user is linked instead.
-            MemberExternalId.where(
-              member: member,
-              system: 'tijuana',
-              external_id: user.id.to_s
-            ).destroy_all
-            abort_sync = true
-          else
-            tj_changes[:email] = member.email
-          end
-        }
+          # Don't need to scrub TJ user email here, UpsertService will
+          # do it for us if needed
+          member_hash[:emails] = [{ email: user.email }]
+        },
+        Proc.new { tj_changes[:email] = member.email }
       )
-      return if abort_sync
 
       # Compare mobile number.
       id_mobile = member&.phone_numbers&.mobile&.first
@@ -433,7 +577,24 @@ module IdentityTijuana
         member_hash[:lastname] = member&.last_name unless member_hash.key?(:lastname) # Required param
         member_hash[:external_ids] = { tijuana: user&.id } # Needed for lookup
         member_hash[:emails] = [{ email: user&.email }] if sync_type == :merge # Needed for lookup
+        member_hash[:apply_email_address_changes] = true # Ensure email address changes are honored
         member_hash[:ignore_phone_number_match] = true # Don't match by phone number, too error-prone
+
+        if member_hash.key?(:emails)
+          email = member_hash[:emails][0][:email]
+          if member.present?
+            # Identity does *not* require email addresses to be
+            # unique in the database (only from the UI?), so check
+            # for it up front and raise an intelligible exception if
+            # conflicts found.
+            conflicting_members = Member.where(email: email).where.not(id: member.id)
+            if conflicting_members.count > 0
+              raise "Email conflict: Id members " \
+                    "#{conflicting_members.pluck(:id)} already have " \
+                    "email address #{email}, bailing out"
+            end
+          end
+        end
 
         new_member = UpsertMember.call(
           member_hash,
@@ -471,8 +632,17 @@ module IdentityTijuana
               Rails.logger.warn("[IdentityTijuana::sync] Member #{member&.id} has no email address - cannot erase the email address of an existing TJ user (sync_id=#{sync_id}, sync_type=#{sync_type}, sync_direction=#{sync_direction})")
               next
             else
-              user.write_attribute(key, value)
+              # TJ does require email addresses to be unique, but lets
+              # check for it up front and raise an intelligible
+              # exception if found.
+              conflicting_users = User.where(email: value).where.not(id: user.id)
+              if conflicting_users.count > 0
+                raise "Email conflict: TJ users " \
+                      "#{conflicting_users.pluck(:id)} already have " \
+                      "email address #{email}, bailing out"
+              end
             end
+            user.write_attribute(key, value)
           when :postcode
             user.postcode = Postcode.find_by(number: value)
           when :state, :reason
