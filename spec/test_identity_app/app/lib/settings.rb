@@ -38,6 +38,12 @@ class Settings
     }
   end
 
+  def self.ghoster
+    return {
+      "email_domain" => "example.com"
+    }
+  end
+
   def self.redis_url
     return ENV['REDIS_URL']
   end

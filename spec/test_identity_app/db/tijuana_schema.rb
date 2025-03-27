@@ -39,25 +39,17 @@ ActiveRecord::Schema[7.0].define(version: 0) do
   add_index "agra_actions", ["updated_at"], name: "index_agra_actions_on_updated_at", using: :btree
   add_index "agra_actions", ["user_id"], name: "index_agra_actions_on_user_id", using: :btree
 
-  create_table "automation_events", force: :cascade do |t|
-    t.bigint   "user_id",       limit: 4
-    t.string   "segment",       limit: 255
-    t.string   "campaign_name", limit: 255
-    t.string   "event",         limit: 255
-    t.string   "tag",           limit: 255
-    t.string   "url",           limit: 255
-    t.datetime "received_at"
-    t.datetime "triggered_at"
-    t.datetime "email_sent_at"
-    t.text     "payload",       limit: 65535
-  end
-
-  add_index "automation_events", ["user_id"], name: "index_automation_events_on_user_id", using: :btree
-
-  create_table "automations", force: :cascade do |t|
-    t.string "segment", limit: 255
-    t.string "listId",  limit: 255
-    t.text   "query",   limit: 65535
+  create_table "anonymisation_logs", force: :cascade do |t|
+    t.integer  "user_id",              limit: 4
+    t.integer  "admin_user_id",        limit: 4
+    t.datetime "started_at"
+    t.datetime "finished_at"
+    t.text     "anonymisation_reason", limit: 65535
+    t.text     "status",               limit: 65535
+    t.text     "message",              limit: 65535
+    t.text     "error_stack",          limit: 65535
+    t.datetime "created_at",                         null: false
+    t.datetime "updated_at",                         null: false
   end
 
   create_table "blasts", force: :cascade do |t|

@@ -8,6 +8,18 @@ module IdentityTijuana
   MEMBER_RECORD_DATA_TYPE = 'object'.freeze
   MUTEX_EXPIRY_DURATION = 10.minutes
 
+  def self.ghost_members(member_ids:, reason:, admin_member_id:)
+    return if member_ids.empty?
+
+    # check that we have the matching user ids for TJ system
+    user_ids = MemberExternalId.where(system: 'tijuana', member_id: member_ids)
+                               .pluck(:external_id)
+                               .map(&:to_i)
+
+    anon_reason = "#{reason} - via Id - admin:#{admin_member_id}"
+    UserGhosting.new(user_ids, anon_reason).ghost_users if user_ids.any?
+  end
+
   def self.push(_sync_id, member_ids, _external_system_params)
     members = Member.where(id: member_ids).with_email.order(:id)
     yield members, nil
