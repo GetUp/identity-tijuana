@@ -106,11 +106,13 @@ module IdentityTijuana
       )
     ).pluck('member_id')
 
-    updated_members = Member.includes(:phone_numbers, :addresses, :member_subscriptions)
-                            .where(id: updated_member_ids)
+    updated_member_ids.each_slice(Settings.tijuana.pull_batch_amount || 100) do |batch_ids|
+      updated_members = Member.includes(:phone_numbers, :addresses, :member_subscriptions)
+                              .where(id: batch_ids)
 
-    updated_members.each do |member|
-      MemberSync.export_member(member, sync_id)
+      updated_members.each do |member|
+        MemberSync.export_member(member, sync_id)
+      end
     end
 
     unless updated_users.empty?
