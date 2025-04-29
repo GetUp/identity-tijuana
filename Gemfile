@@ -30,6 +30,10 @@ group :development, :test do
   gem 'spring-commands-rspec'
   gem 'webmock'
 
+  # Remove when upgrading to Rails >7.0
+  # See https://github.com/rails/rails/pull/54264
+  gem "concurrent-ruby", "< 1.3.5"
+
   # Identity requirements
   gem 'audited', '~> 5.4.2'
   gem 'phony'
